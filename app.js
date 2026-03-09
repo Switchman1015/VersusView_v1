@@ -38,6 +38,8 @@ let comments = [];
 let frameDuration = 1 / 30;
 let rafId = null;
 let isResizingHorizontalPane = false;
+const HARD_SYNC_THRESHOLD = 1 / 240;
+const SOFT_SYNC_THRESHOLD = 1 / 1000;
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -136,14 +138,22 @@ function updateTimelineUI() {
 
 function syncRightToLeft() {
   if (!canControl) return;
+  if (rightVideo.readyState < 2) return;
   const master = leftVideo.currentTime;
   const slave = rightVideo.currentTime;
   if (!Number.isFinite(master) || !Number.isFinite(slave)) return;
 
-  const drift = Math.abs(master - slave);
-  const threshold = Math.max(frameDuration * 0.5, 0.008);
-  if (drift > threshold) {
+  const drift = master - slave;
+  const absDrift = Math.abs(drift);
+
+  if (absDrift > HARD_SYNC_THRESHOLD) {
     rightVideo.currentTime = master;
+    rightVideo.playbackRate = 1;
+  } else if (isPlaying && absDrift > SOFT_SYNC_THRESHOLD) {
+    const nudgedRate = Math.min(1.03, Math.max(0.97, 1 + drift * 0.35));
+    rightVideo.playbackRate = nudgedRate;
+  } else {
+    rightVideo.playbackRate = 1;
   }
 
   if (isPlaying && rightVideo.paused) {
@@ -167,6 +177,7 @@ function startTick() {
 function pauseBoth() {
   leftVideo.pause();
   rightVideo.pause();
+  rightVideo.playbackRate = 1;
   setPlayingState(false);
   if (rafId) {
     cancelAnimationFrame(rafId);
@@ -469,6 +480,9 @@ timeInput.addEventListener("keydown", (e) => {
   video.addEventListener("loadedmetadata", onVideoLoaded);
   video.addEventListener("ended", pauseBoth);
 });
+leftVideo.addEventListener("timeupdate", syncRightToLeft);
+leftVideo.addEventListener("seeking", syncRightToLeft);
+leftVideo.addEventListener("seeked", syncRightToLeft);
 
 if (addCommentBtn) {
   addCommentBtn.addEventListener("click", addComment);
