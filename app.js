@@ -38,8 +38,7 @@ let comments = [];
 let frameDuration = 1 / 30;
 let rafId = null;
 let isResizingHorizontalPane = false;
-const HARD_SYNC_THRESHOLD = 1 / 240;
-const SOFT_SYNC_THRESHOLD = 1 / 1000;
+const HARD_SYNC_THRESHOLD = 1 / 1000;
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -148,13 +147,8 @@ function syncRightToLeft() {
 
   if (absDrift > HARD_SYNC_THRESHOLD) {
     rightVideo.currentTime = master;
-    rightVideo.playbackRate = 1;
-  } else if (isPlaying && absDrift > SOFT_SYNC_THRESHOLD) {
-    const nudgedRate = Math.min(1.03, Math.max(0.97, 1 + drift * 0.35));
-    rightVideo.playbackRate = nudgedRate;
-  } else {
-    rightVideo.playbackRate = 1;
   }
+  rightVideo.playbackRate = 1;
 
   if (isPlaying && rightVideo.paused) {
     rightVideo.play().catch(() => {});
