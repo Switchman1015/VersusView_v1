@@ -444,6 +444,33 @@ select {
   width: auto;
 }
 
+.comment-mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mode-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.single-target-row {
+  margin-bottom: 10px;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.export-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .comments {
   border-color: var(--line);
 }
@@ -519,6 +546,82 @@ select {
   font-size: 0.82rem;
 }
 
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 14, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-panel {
+  width: min(640px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #101722;
+  padding: 14px;
+}
+
+.overlay-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.overlay-head h3 {
+  margin: 0;
+  font-size: 1.04rem;
+}
+
+.overlay-section {
+  margin-top: 14px;
+}
+
+.overlay-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.overlay-options {
+  display: flex;
+  gap: 14px;
+}
+
+.overlay-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.overlay-save {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.overlay-location {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.overlay-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -560,5 +663,13 @@ button:disabled {
 
   .field {
     width: 100%;
+  }
+
+  .overlay-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overlay-location {
+    grid-template-columns: 1fr;
   }
 }

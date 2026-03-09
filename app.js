@@ -23,11 +23,25 @@ const remainLabel = document.getElementById("remainLabel");
 const authorInput = document.getElementById("authorInput");
 const commentInput = document.getElementById("commentInput");
 const addCommentBtn = document.getElementById("addCommentBtn");
+const compareModeTab = document.getElementById("compareModeTab");
+const singleModeTab = document.getElementById("singleModeTab");
+const singleTargetRow = document.getElementById("singleTargetRow");
+const singleTargetSelect = document.getElementById("singleTargetSelect");
 const commentsList = document.getElementById("commentsList");
 const commentCount = document.getElementById("commentCount");
 const sortType = document.getElementById("sortType");
 const sortOrder = document.getElementById("sortOrder");
-const exportCsvBtn = document.getElementById("exportCsvBtn");
+const openExportOverlayBtn = document.getElementById("openExportOverlayBtn");
+const importCommentsBtn = document.getElementById("importCommentsBtn");
+const importCommentsFile = document.getElementById("importCommentsFile");
+const exportOverlay = document.getElementById("exportOverlay");
+const closeExportOverlayBtn = document.getElementById("closeExportOverlayBtn");
+const chooseExportLocationBtn = document.getElementById("chooseExportLocationBtn");
+const exportLocationLabel = document.getElementById("exportLocationLabel");
+const runExportBtn = document.getElementById("runExportBtn");
+const exportFormatInputs = document.querySelectorAll('input[name="exportFormat"]');
+const exportLocationTypeInputs = document.querySelectorAll('input[name="exportLocationType"]');
+const exportFieldInputs = document.querySelectorAll('input[data-export-field]');
 const statusMessage = document.getElementById("statusMessage");
 
 let canControl = false;
@@ -38,7 +52,9 @@ let comments = [];
 let frameDuration = 1 / 30;
 let rafId = null;
 let isResizingHorizontalPane = false;
-const HARD_SYNC_THRESHOLD = 1 / 1000;
+let frameLockRequestId = null;
+let exportFileHandle = null;
+let commentMode = "compare";
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -142,16 +158,60 @@ function syncRightToLeft() {
   const slave = rightVideo.currentTime;
   if (!Number.isFinite(master) || !Number.isFinite(slave)) return;
 
-  const drift = master - slave;
-  const absDrift = Math.abs(drift);
-
-  if (absDrift > HARD_SYNC_THRESHOLD) {
-    rightVideo.currentTime = master;
+  const fps = Math.max(1, Math.round(1 / frameDuration));
+  const masterFrame = Math.round(master * fps);
+  const slaveFrame = Math.round(slave * fps);
+  if (masterFrame !== slaveFrame) {
+    rightVideo.currentTime = masterFrame / fps;
   }
   rightVideo.playbackRate = 1;
 
   if (isPlaying && rightVideo.paused) {
     rightVideo.play().catch(() => {});
+  }
+}
+
+function stopFrameLock() {
+  if (frameLockRequestId !== null && typeof leftVideo.cancelVideoFrameCallback === "function") {
+    leftVideo.cancelVideoFrameCallback(frameLockRequestId);
+  }
+  frameLockRequestId = null;
+}
+
+function frameLockTick(_now, metadata) {
+  if (!isPlaying || !canControl) {
+    frameLockRequestId = null;
+    return;
+  }
+  if (!Number.isFinite(metadata?.mediaTime)) {
+    syncRightToLeft();
+  } else {
+    const fps = Math.max(1, Math.round(1 / frameDuration));
+    const masterFrame = Math.round(metadata.mediaTime * fps);
+    const target = masterFrame / fps;
+    const slave = rightVideo.currentTime;
+    const slaveFrame = Math.round(slave * fps);
+    if (slaveFrame !== masterFrame) {
+      rightVideo.currentTime = target;
+    }
+    rightVideo.playbackRate = 1;
+    if (isPlaying && rightVideo.paused) {
+      rightVideo.play().catch(() => {});
+    }
+  }
+
+  if (typeof leftVideo.requestVideoFrameCallback === "function") {
+    frameLockRequestId = leftVideo.requestVideoFrameCallback(frameLockTick);
+  } else {
+    frameLockRequestId = null;
+  }
+}
+
+function startFrameLock() {
+  stopFrameLock();
+  if (!isPlaying || !canControl) return;
+  if (typeof leftVideo.requestVideoFrameCallback === "function") {
+    frameLockRequestId = leftVideo.requestVideoFrameCallback(frameLockTick);
   }
 }
 
@@ -172,6 +232,7 @@ function pauseBoth() {
   leftVideo.pause();
   rightVideo.pause();
   rightVideo.playbackRate = 1;
+  stopFrameLock();
   setPlayingState(false);
   if (rafId) {
     cancelAnimationFrame(rafId);
@@ -187,6 +248,7 @@ function playBoth() {
   Promise.allSettled([leftVideo.play(), rightVideo.play()]).then(() => {
     setPlayingState(true);
     startTick();
+    startFrameLock();
   });
 }
 
@@ -231,12 +293,10 @@ function onVideoLoaded() {
   }
 }
 
-function handleFileSelection(fileInput, videoEl, filenameEl, placeholderEl) {
-  const file = fileInput.files?.[0];
-  if (!file) return;
+function loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl) {
   if (!file.name.toLowerCase().endsWith(".mp4")) {
     setMessage("MP4形式のみ対応しています。");
-    return;
+    return false;
   }
 
   const url = URL.createObjectURL(file);
@@ -245,10 +305,34 @@ function handleFileSelection(fileInput, videoEl, filenameEl, placeholderEl) {
   placeholderEl.style.display = "none";
   pauseBoth();
   onVideoLoaded();
+  return true;
 }
 
-function openFilePicker(fileInput) {
-  if (!fileInput) return;
+function handleFileSelection(fileInput, videoEl, filenameEl, placeholderEl) {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  const ok = loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl);
+  if (!ok) return;
+}
+
+async function openFilePicker(fileInput, videoEl, filenameEl, placeholderEl) {
+  if (!fileInput || !videoEl || !filenameEl || !placeholderEl) return;
+  if (window.showOpenFilePicker) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: "MP4 Video", accept: { "video/mp4": [".mp4"] } }]
+      });
+      if (!handles?.length) return;
+      const handle = handles[0];
+      const file = await handle.getFile();
+      const ok = loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl);
+      if (!ok) return;
+      return;
+    } catch {
+      // User cancelled or API unavailable in this context.
+    }
+  }
   fileInput.value = "";
   fileInput.click();
 }
@@ -258,12 +342,20 @@ function addComment() {
   if (!text) return;
 
   const author = authorInput.value.trim() || "未入力";
+  const target = commentMode === "single" ? (singleTargetSelect?.value || "left") : "both";
+  const baseTime =
+    target === "right"
+      ? rightVideo.currentTime || 0
+      : leftVideo.currentTime || 0;
+
   comments.unshift({
     id: crypto.randomUUID(),
     author,
     text,
-    seconds: leftVideo.currentTime || 0,
-    timecode: formatTime(leftVideo.currentTime || 0),
+    mode: commentMode,
+    target,
+    seconds: baseTime,
+    timecode: formatTime(baseTime),
     updatedAt: Date.now()
   });
 
@@ -271,10 +363,10 @@ function addComment() {
   renderComments();
 }
 
-function sortedComments() {
+function sortedComments(source) {
   const type = sortType.value;
   const order = sortOrder.value;
-  const copy = [...comments];
+  const copy = [...(source || comments)];
 
   copy.sort((a, b) => {
     let diff = 0;
@@ -289,17 +381,35 @@ function sortedComments() {
   return copy;
 }
 
-function renderComments() {
-  commentCount.textContent = `コメント: ${comments.length}`;
+function visibleComments() {
+  let filtered = comments.filter((comment) => (comment.mode || "compare") === commentMode);
+  if (commentMode === "single") {
+    const target = singleTargetSelect?.value || "left";
+    filtered = filtered.filter((comment) => (comment.target || "left") === target);
+  }
+  return sortedComments(filtered);
+}
 
-  if (comments.length === 0) {
+function setCommentMode(nextMode) {
+  commentMode = nextMode === "single" ? "single" : "compare";
+  if (compareModeTab) compareModeTab.classList.toggle("active", commentMode === "compare");
+  if (singleModeTab) singleModeTab.classList.toggle("active", commentMode === "single");
+  if (singleTargetRow) singleTargetRow.classList.toggle("is-hidden", commentMode !== "single");
+  renderComments();
+}
+
+function renderComments() {
+  const rows = visibleComments();
+  commentCount.textContent = `コメント: ${rows.length}`;
+
+  if (rows.length === 0) {
     commentsList.innerHTML = '<div class="comment-item"><div class="comment-time">--:--:--</div><div class="comment-text" style="color:#667088">コメントはまだありません</div><div></div></div>';
     return;
   }
 
   commentsList.innerHTML = "";
 
-  sortedComments().forEach((comment) => {
+  rows.forEach((comment) => {
     const item = document.createElement("div");
     item.className = "comment-item";
 
@@ -310,7 +420,11 @@ function renderComments() {
     const main = document.createElement("div");
     const author = document.createElement("div");
     author.className = "comment-author";
-    author.textContent = comment.author;
+    const modeLabel =
+      (comment.mode || "compare") === "single"
+        ? (comment.target === "right" ? "右動画" : "左動画")
+        : "比較";
+    author.textContent = `${comment.author} / ${modeLabel}`;
 
     const text = document.createElement("button");
     text.className = "comment-text btn";
@@ -361,32 +475,263 @@ function toCsvField(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function exportCommentsCsv() {
-  const rows = sortedComments();
-  const header = ["動画時間", "秒", "記入者", "コメント", "更新日時"];
+const EXPORT_FIELDS = [
+  { key: "mode", label: "コメントモード", value: (row) => row.mode || "compare" },
+  { key: "target", label: "対象動画", value: (row) => row.target || "both" },
+  { key: "timecode", label: "動画時間", value: (row) => row.timecode },
+  { key: "seconds", label: "秒", value: (row) => row.seconds.toFixed(3) },
+  { key: "author", label: "記入者", value: (row) => row.author },
+  { key: "text", label: "コメント", value: (row) => row.text },
+  { key: "updatedAt", label: "更新日時", value: (row) => new Date(row.updatedAt).toISOString() }
+];
+
+function getSelectedExportFormat() {
+  const selected = [...exportFormatInputs].find((input) => input.checked);
+  return selected?.value === "txt" ? "txt" : "csv";
+}
+
+function getSelectedExportFields() {
+  const selectedKeys = [...exportFieldInputs]
+    .filter((input) => input.checked)
+    .map((input) => input.getAttribute("data-export-field"));
+  return EXPORT_FIELDS.filter((field) => selectedKeys.includes(field.key));
+}
+
+function getSelectedExportLocationType() {
+  const selected = [...exportLocationTypeInputs].find((input) => input.checked);
+  return selected?.value || "download";
+}
+
+function updateExportLocationUI() {
+  const type = getSelectedExportLocationType();
+  if (chooseExportLocationBtn) {
+    chooseExportLocationBtn.style.display = type === "custom" ? "inline-flex" : "none";
+  }
+
+  if (!exportLocationLabel) return;
+  if (type === "download") {
+    exportLocationLabel.textContent = "通常ダウンロードします";
+    return;
+  }
+  exportLocationLabel.textContent = exportFileHandle
+    ? `選択中: ${exportFileHandle.name || "(ファイル)"}`
+    : "未選択（未選択時は通常ダウンロード）";
+}
+
+function buildCsvContent(rows, fields) {
+  const header = fields.map((field) => field.label);
   const lines = [header.map(toCsvField).join(",")];
-
   rows.forEach((row) => {
-    const updatedAt = new Date(row.updatedAt).toISOString();
-    lines.push(
-      [row.timecode, row.seconds.toFixed(3), row.author, row.text, updatedAt]
-        .map(toCsvField)
-        .join(",")
-    );
+    lines.push(fields.map((field) => toCsvField(field.value(row))).join(","));
   });
+  return `\uFEFF${lines.join("\n")}`;
+}
 
-  const bom = "\uFEFF";
-  const csv = `${bom}${lines.join("\n")}`;
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+function buildTxtContent(rows, fields) {
+  const lines = rows.map((row) =>
+    fields.map((field) => `${field.label}: ${field.value(row)}`).join(" | ")
+  );
+  return lines.join("\n");
+}
+
+async function saveByHandle(content) {
+  if (!exportFileHandle) return false;
+  try {
+    const writable = await exportFileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    const name = exportFileHandle.name || "(ファイル)";
+    exportLocationLabel.textContent = `選択中: ${name}`;
+    return true;
+  } catch {
+    exportFileHandle = null;
+    exportLocationLabel.textContent = "未選択（未選択時は通常ダウンロード）";
+    return false;
+  }
+}
+
+function saveByDownload(content, format) {
+  const mimeType = format === "txt" ? "text/plain;charset=utf-8;" : "text/csv;charset=utf-8;";
+  const ext = format === "txt" ? "txt" : "csv";
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
   a.href = url;
-  a.download = `versusview-comments-${stamp}.csv`;
+  a.download = `versusview-comments-${stamp}.${ext}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+async function chooseExportLocation() {
+  if (!window.showSaveFilePicker) {
+    exportFileHandle = null;
+    exportLocationLabel.textContent = "このブラウザでは保存場所指定に未対応（通常ダウンロード）";
+    return;
+  }
+  const format = getSelectedExportFormat();
+  const ext = format === "txt" ? "txt" : "csv";
+  const accept = format === "txt" ? { "text/plain": [".txt"] } : { "text/csv": [".csv"] };
+  try {
+    exportFileHandle = await window.showSaveFilePicker({
+      suggestedName: `versusview-comments.${ext}`,
+      types: [{ description: format.toUpperCase(), accept }]
+    });
+    updateExportLocationUI();
+  } catch {
+    // User cancelled picker.
+  }
+}
+
+function setExportOverlayVisible(visible) {
+  if (!exportOverlay) return;
+  exportOverlay.classList.toggle("hidden", !visible);
+  exportOverlay.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+async function runExport() {
+  const fields = getSelectedExportFields();
+  if (fields.length === 0) return;
+  const rows = visibleComments();
+  const format = getSelectedExportFormat();
+  const content = format === "txt" ? buildTxtContent(rows, fields) : buildCsvContent(rows, fields);
+  const locationType = getSelectedExportLocationType();
+  let saved = false;
+  if (locationType === "custom") {
+    saved = await saveByHandle(content);
+  }
+  if (!saved && locationType !== "download") {
+    saveByDownload(content, format);
+  } else if (locationType === "download") {
+    saveByDownload(content, format);
+  }
+  setExportOverlayVisible(false);
+}
+
+function parseCsvText(text) {
+  const normalized = text.replace(/^\uFEFF/, "");
+  const table = [];
+  let row = [];
+  let field = "";
+  let inQuote = false;
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const ch = normalized[i];
+    if (ch === '"') {
+      if (inQuote && normalized[i + 1] === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuote = !inQuote;
+      }
+    } else if (ch === "," && !inQuote) {
+      row.push(field);
+      field = "";
+    } else if ((ch === "\n" || ch === "\r") && !inQuote) {
+      if (ch === "\r" && normalized[i + 1] === "\n") i += 1;
+      row.push(field);
+      field = "";
+      if (row.some((v) => v.length > 0)) table.push(row);
+      row = [];
+    } else {
+      field += ch;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    if (row.some((v) => v.length > 0)) table.push(row);
+  }
+
+  if (table.length === 0) return [];
+  const headers = table[0];
+  const byLabel = (label) => headers.indexOf(label);
+  const idx = {
+    mode: byLabel("コメントモード"),
+    target: byLabel("対象動画"),
+    timecode: byLabel("動画時間"),
+    seconds: byLabel("秒"),
+    author: byLabel("記入者"),
+    text: byLabel("コメント"),
+    updatedAt: byLabel("更新日時")
+  };
+
+  return table.slice(1).map((cols, rowIndex) => {
+    const secondsRaw = idx.seconds >= 0 ? Number(cols[idx.seconds]) : NaN;
+    const timecodeRaw = idx.timecode >= 0 ? cols[idx.timecode] : "";
+    const parsedByTimecode = parseTimeInput(timecodeRaw);
+    const seconds = Number.isFinite(secondsRaw)
+      ? secondsRaw
+      : Number.isFinite(parsedByTimecode)
+        ? parsedByTimecode
+        : 0;
+    const updatedRaw = idx.updatedAt >= 0 ? Date.parse(cols[idx.updatedAt]) : NaN;
+    const modeRaw = idx.mode >= 0 ? cols[idx.mode] : "compare";
+    const targetRaw = idx.target >= 0 ? cols[idx.target] : "both";
+    const mode = modeRaw === "single" ? "single" : "compare";
+    const target = targetRaw === "right" ? "right" : targetRaw === "left" ? "left" : "both";
+    return {
+      id: crypto.randomUUID(),
+      author: idx.author >= 0 ? (cols[idx.author] || "未入力") : "未入力",
+      text: idx.text >= 0 ? (cols[idx.text] || "") : "",
+      mode,
+      target: mode === "single" ? (target === "both" ? "left" : target) : "both",
+      seconds,
+      timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
+      updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
+    };
+  }).filter((row) => row.text.length > 0);
+}
+
+function parseTxtText(text) {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  return lines.map((line, rowIndex) => {
+    const pairs = line.split(" | ").map((part) => {
+      const sep = part.indexOf(":");
+      if (sep === -1) return ["", ""];
+      const key = part.slice(0, sep).trim();
+      const value = part.slice(sep + 1).trim();
+      return [key, value];
+    });
+    const map = Object.fromEntries(pairs);
+    const secondsRaw = Number(map["秒"]);
+    const parsedByTimecode = parseTimeInput(map["動画時間"] || "");
+    const seconds = Number.isFinite(secondsRaw)
+      ? secondsRaw
+      : Number.isFinite(parsedByTimecode)
+        ? parsedByTimecode
+        : 0;
+    const updatedRaw = Date.parse(map["更新日時"] || "");
+    const modeRaw = map["コメントモード"] || "compare";
+    const targetRaw = map["対象動画"] || "both";
+    const mode = modeRaw === "single" ? "single" : "compare";
+    const target = targetRaw === "right" ? "right" : targetRaw === "left" ? "left" : "both";
+    return {
+      id: crypto.randomUUID(),
+      author: map["記入者"] || "未入力",
+      text: map["コメント"] || "",
+      mode,
+      target: mode === "single" ? (target === "both" ? "left" : target) : "both",
+      seconds,
+      timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
+      updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
+    };
+  }).filter((row) => row.text.length > 0);
+}
+
+async function importCommentsFromFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  const lower = file.name.toLowerCase();
+  const parsed = lower.endsWith(".txt") ? parseTxtText(text) : parseCsvText(text);
+  if (parsed.length === 0) {
+    setMessage("読み込み可能なコメントが見つかりませんでした。");
+    return;
+  }
+  comments = [...parsed, ...comments];
+  renderComments();
+  setMessage(`${parsed.length}件のコメントを読み込みました。`);
 }
 
 function beginHorizontalResize(event) {
@@ -426,19 +771,19 @@ playPauseBtn.addEventListener("click", () => {
   else playBoth();
 });
 
-function setupVideoPickerOnSurface(videoWrap, videoEl, fileInput) {
-  if (!videoWrap || !videoEl || !fileInput) return;
+function setupVideoPickerOnSurface(videoWrap, videoEl, fileInput, filenameEl, placeholderEl) {
+  if (!videoWrap || !videoEl || !fileInput || !filenameEl || !placeholderEl) return;
 
-  videoWrap.addEventListener("click", (e) => {
+  videoWrap.addEventListener("click", async (e) => {
     if (videoEl.src) return;
     e.preventDefault();
-    openFilePicker(fileInput);
+    await openFilePicker(fileInput, videoEl, filenameEl, placeholderEl);
   });
 
-  videoWrap.addEventListener("dblclick", (e) => {
+  videoWrap.addEventListener("dblclick", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openFilePicker(fileInput);
+    await openFilePicker(fileInput, videoEl, filenameEl, placeholderEl);
   });
 }
 
@@ -481,6 +826,15 @@ leftVideo.addEventListener("seeked", syncRightToLeft);
 if (addCommentBtn) {
   addCommentBtn.addEventListener("click", addComment);
 }
+if (compareModeTab) {
+  compareModeTab.addEventListener("click", () => setCommentMode("compare"));
+}
+if (singleModeTab) {
+  singleModeTab.addEventListener("click", () => setCommentMode("single"));
+}
+if (singleTargetSelect) {
+  singleTargetSelect.addEventListener("change", renderComments);
+}
 commentInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.shiftKey) {
     e.preventDefault();
@@ -489,18 +843,59 @@ commentInput.addEventListener("keydown", (e) => {
 });
 sortType.addEventListener("change", renderComments);
 sortOrder.addEventListener("change", renderComments);
-if (exportCsvBtn) {
-  exportCsvBtn.addEventListener("click", exportCommentsCsv);
+if (openExportOverlayBtn) {
+  openExportOverlayBtn.addEventListener("click", () => {
+    updateExportLocationUI();
+    setExportOverlayVisible(true);
+  });
 }
+if (closeExportOverlayBtn) {
+  closeExportOverlayBtn.addEventListener("click", () => setExportOverlayVisible(false));
+}
+if (exportOverlay) {
+  exportOverlay.addEventListener("click", (e) => {
+    if (e.target === exportOverlay) setExportOverlayVisible(false);
+  });
+}
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setExportOverlayVisible(false);
+});
+if (chooseExportLocationBtn) {
+  chooseExportLocationBtn.addEventListener("click", chooseExportLocation);
+}
+if (runExportBtn) {
+  runExportBtn.addEventListener("click", runExport);
+}
+if (importCommentsBtn && importCommentsFile) {
+  importCommentsBtn.addEventListener("click", () => {
+    importCommentsFile.value = "";
+    importCommentsFile.click();
+  });
+  importCommentsFile.addEventListener("change", async () => {
+    const file = importCommentsFile.files?.[0];
+    await importCommentsFromFile(file);
+  });
+}
+exportFormatInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    exportFileHandle = null;
+    updateExportLocationUI();
+  });
+});
+exportLocationTypeInputs.forEach((input) => {
+  input.addEventListener("change", updateExportLocationUI);
+});
 
 paneResizer.addEventListener("pointerdown", beginHorizontalResize);
 window.addEventListener("pointermove", updateHorizontalResize);
 window.addEventListener("pointerup", endHorizontalResize);
 window.addEventListener("pointercancel", endHorizontalResize);
 
-setupVideoPickerOnSurface(leftVideoWrap, leftVideo, leftFile);
-setupVideoPickerOnSurface(rightVideoWrap, rightVideo, rightFile);
+setupVideoPickerOnSurface(leftVideoWrap, leftVideo, leftFile, leftFilename, leftPlaceholder);
+setupVideoPickerOnSurface(rightVideoWrap, rightVideo, rightFile, rightFilename, rightPlaceholder);
 
 syncControlsState();
 renderComments();
 updateTimelineUI();
+updateExportLocationUI();
+setCommentMode("compare");

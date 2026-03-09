@@ -60,10 +60,20 @@
 
         <section class="right-pane">
           <section class="comments card">
+            <div class="comment-mode-tabs">
+              <button id="compareModeTab" class="btn mode-tab active" type="button">２動画比較</button>
+              <button id="singleModeTab" class="btn mode-tab" type="button">動画単体</button>
+            </div>
             <div class="comment-input card-lite">
               <div class="comment-input-head">
                 <h3>コメント記入</h3>
                 <span>Shift+Enterで追加</span>
+              </div>
+              <div id="singleTargetRow" class="single-target-row is-hidden">
+                <select id="singleTargetSelect">
+                  <option value="left">左動画</option>
+                  <option value="right">右動画</option>
+                </select>
               </div>
               <div class="comment-input-row">
                 <div class="field grow">
@@ -85,15 +95,65 @@
                 <option value="desc">降順</option>
                 <option value="asc">昇順</option>
               </select>
-              <button id="exportCsvBtn" class="btn" type="button">CSV書き出し</button>
               <span id="commentCount">コメント: 0</span>
             </div>
 
             <div id="commentsList" class="comments-list"></div>
+            <div class="export-row">
+              <button id="openExportOverlayBtn" class="btn" type="button">書き出し</button>
+              <button id="importCommentsBtn" class="btn" type="button">読み込み</button>
+              <input id="importCommentsFile" type="file" accept=".csv,.txt,text/csv,text/plain" hidden />
+            </div>
           </section>
         </section>
       </div>
     </main>
+
+    <div id="exportOverlay" class="overlay hidden" aria-hidden="true">
+      <div class="overlay-panel">
+        <div class="overlay-head">
+          <h3>コメント書き出し</h3>
+          <button id="closeExportOverlayBtn" class="btn" type="button">閉じる</button>
+        </div>
+
+        <div class="overlay-section">
+          <p class="overlay-label">形式</p>
+          <div class="overlay-options">
+            <label><input type="radio" name="exportFormat" value="csv" checked /> CSV</label>
+            <label><input type="radio" name="exportFormat" value="txt" /> TXT</label>
+          </div>
+        </div>
+
+        <div class="overlay-section">
+          <p class="overlay-label">書き出す項目</p>
+          <div class="overlay-grid">
+            <label><input type="checkbox" data-export-field="mode" checked /> コメントモード</label>
+            <label><input type="checkbox" data-export-field="target" checked /> 対象動画</label>
+            <label><input type="checkbox" data-export-field="timecode" checked /> 動画時間</label>
+            <label><input type="checkbox" data-export-field="seconds" checked /> 秒</label>
+            <label><input type="checkbox" data-export-field="author" checked /> 記入者</label>
+            <label><input type="checkbox" data-export-field="text" checked /> コメント</label>
+            <label><input type="checkbox" data-export-field="updatedAt" checked /> 更新日時</label>
+          </div>
+        </div>
+
+        <div class="overlay-section">
+          <p class="overlay-label">保存場所</p>
+          <div class="overlay-location">
+            <label><input type="radio" name="exportLocationType" value="download" checked /> 通常ダウンロード</label>
+            <label><input type="radio" name="exportLocationType" value="custom" /> 任意の保存先</label>
+          </div>
+          <div class="overlay-save">
+            <button id="chooseExportLocationBtn" class="btn" type="button">保存場所を選択</button>
+            <span id="exportLocationLabel" class="label-mono">未選択（未選択時は通常ダウンロード）</span>
+          </div>
+        </div>
+
+        <div class="overlay-actions">
+          <button id="runExportBtn" class="btn btn-primary" type="button">書き出し実行</button>
+        </div>
+      </div>
+    </div>
 
     <script src="./app.js"></script>
   </body>
