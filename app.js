@@ -27,6 +27,7 @@ const commentsList = document.getElementById("commentsList");
 const commentCount = document.getElementById("commentCount");
 const sortType = document.getElementById("sortType");
 const sortOrder = document.getElementById("sortOrder");
+const exportCsvBtn = document.getElementById("exportCsvBtn");
 const statusMessage = document.getElementById("statusMessage");
 
 let canControl = false;
@@ -350,6 +351,39 @@ function renderComments() {
   });
 }
 
+function toCsvField(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function exportCommentsCsv() {
+  const rows = sortedComments();
+  const header = ["動画時間", "秒", "記入者", "コメント", "更新日時"];
+  const lines = [header.map(toCsvField).join(",")];
+
+  rows.forEach((row) => {
+    const updatedAt = new Date(row.updatedAt).toISOString();
+    lines.push(
+      [row.timecode, row.seconds.toFixed(3), row.author, row.text, updatedAt]
+        .map(toCsvField)
+        .join(",")
+    );
+  });
+
+  const bom = "\uFEFF";
+  const csv = `${bom}${lines.join("\n")}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+  a.href = url;
+  a.download = `versusview-comments-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function beginHorizontalResize(event) {
   isResizingHorizontalPane = true;
   document.body.classList.add("resizing");
@@ -447,6 +481,9 @@ commentInput.addEventListener("keydown", (e) => {
 });
 sortType.addEventListener("change", renderComments);
 sortOrder.addEventListener("change", renderComments);
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener("click", exportCommentsCsv);
+}
 
 paneResizer.addEventListener("pointerdown", beginHorizontalResize);
 window.addEventListener("pointermove", updateHorizontalResize);
