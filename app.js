@@ -2,6 +2,7 @@ const leftVideo = document.getElementById("leftVideo");
 const rightVideo = document.getElementById("rightVideo");
 const leftVideoWrap = document.getElementById("leftVideoWrap");
 const rightVideoWrap = document.getElementById("rightVideoWrap");
+const videoGrid = document.getElementById("videoGrid");
 const splitLayout = document.getElementById("splitLayout");
 const paneResizer = document.getElementById("paneResizer");
 const leftFile = document.getElementById("leftFile");
@@ -54,7 +55,7 @@ let rafId = null;
 let isResizingHorizontalPane = false;
 let frameLockRequestId = null;
 let exportFileHandle = null;
-let commentMode = "compare";
+let viewMode = "compare";
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -117,13 +118,25 @@ function nearestFrame(seconds) {
 }
 
 function getDuration() {
+  if (viewMode === "single") {
+    const singleTarget = singleTargetSelect?.value || "left";
+    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    if (!video.duration || !Number.isFinite(video.duration)) return 0;
+    return video.duration;
+  }
   if (!leftVideo.duration || !rightVideo.duration) return 0;
   if (!Number.isFinite(leftVideo.duration) || !Number.isFinite(rightVideo.duration)) return 0;
   return Math.min(leftVideo.duration, rightVideo.duration);
 }
 
 function syncControlsState() {
-  canControl = Boolean(leftVideo.src && rightVideo.src && getDuration() > 0);
+  if (viewMode === "single") {
+    const singleTarget = singleTargetSelect?.value || "left";
+    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    canControl = Boolean(video.src && getDuration() > 0);
+  } else {
+    canControl = Boolean(leftVideo.src && rightVideo.src && getDuration() > 0);
+  }
   playPauseBtn.disabled = !canControl;
   stepBackBtn.disabled = !canControl;
   stepForwardBtn.disabled = !canControl;
@@ -138,7 +151,12 @@ function setPlayingState(playing) {
 }
 
 function updateTimelineUI() {
-  const current = leftVideo.currentTime || 0;
+  const singleTarget = singleTargetSelect?.value || "left";
+  const baseVideo =
+    viewMode === "single"
+      ? (singleTarget === "right" ? rightVideo : leftVideo)
+      : leftVideo;
+  const current = baseVideo.currentTime || 0;
   const duration = getDuration();
 
   if (!isScrubbing) {
@@ -152,6 +170,7 @@ function updateTimelineUI() {
 }
 
 function syncRightToLeft() {
+  if (viewMode !== "compare") return;
   if (!canControl) return;
   if (rightVideo.readyState < 2) return;
   const master = leftVideo.currentTime;
@@ -242,6 +261,18 @@ function pauseBoth() {
 
 function playBoth() {
   if (!canControl) return;
+  if (viewMode === "single") {
+    const singleTarget = singleTargetSelect?.value || "left";
+    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    const other = singleTarget === "right" ? leftVideo : rightVideo;
+    other.pause();
+    Promise.allSettled([video.play()]).then(() => {
+      setPlayingState(true);
+      startTick();
+      stopFrameLock();
+    });
+    return;
+  }
   const t = leftVideo.currentTime;
   rightVideo.currentTime = t;
 
@@ -259,8 +290,14 @@ function seekBoth(seconds, resume = false) {
   const clamped = Math.min(Math.max(seconds, 0), duration);
   const token = ++seekToken;
 
-  leftVideo.currentTime = clamped;
-  rightVideo.currentTime = clamped;
+  if (viewMode === "single") {
+    const singleTarget = singleTargetSelect?.value || "left";
+    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    video.currentTime = clamped;
+  } else {
+    leftVideo.currentTime = clamped;
+    rightVideo.currentTime = clamped;
+  }
 
   setTimeout(() => {
     if (token !== seekToken) return;
@@ -287,9 +324,17 @@ function onVideoLoaded() {
   updateTimelineUI();
   if (canControl) {
     seekBoth(0, false);
-    setMessage("2動画を読み込みました。同期再生できます。");
+    if (viewMode === "compare") {
+      setMessage("2動画を読み込みました。同期再生できます。");
+    } else {
+      setMessage("動画を読み込みました。単体チェックできます。");
+    }
   } else {
-    setMessage("もう片方の動画を選択してください。");
+    if (viewMode === "compare") {
+      setMessage("もう片方の動画を選択してください。");
+    } else {
+      setMessage("単体チェックする動画を選択してください。");
+    }
   }
 }
 
@@ -342,18 +387,12 @@ function addComment() {
   if (!text) return;
 
   const author = authorInput.value.trim() || "未入力";
-  const target = commentMode === "single" ? (singleTargetSelect?.value || "left") : "both";
-  const baseTime =
-    target === "right"
-      ? rightVideo.currentTime || 0
-      : leftVideo.currentTime || 0;
+  const baseTime = leftVideo.currentTime || 0;
 
   comments.unshift({
     id: crypto.randomUUID(),
     author,
     text,
-    mode: commentMode,
-    target,
     seconds: baseTime,
     timecode: formatTime(baseTime),
     updatedAt: Date.now()
@@ -381,25 +420,8 @@ function sortedComments(source) {
   return copy;
 }
 
-function visibleComments() {
-  let filtered = comments.filter((comment) => (comment.mode || "compare") === commentMode);
-  if (commentMode === "single") {
-    const target = singleTargetSelect?.value || "left";
-    filtered = filtered.filter((comment) => (comment.target || "left") === target);
-  }
-  return sortedComments(filtered);
-}
-
-function setCommentMode(nextMode) {
-  commentMode = nextMode === "single" ? "single" : "compare";
-  if (compareModeTab) compareModeTab.classList.toggle("active", commentMode === "compare");
-  if (singleModeTab) singleModeTab.classList.toggle("active", commentMode === "single");
-  if (singleTargetRow) singleTargetRow.classList.toggle("is-hidden", commentMode !== "single");
-  renderComments();
-}
-
 function renderComments() {
-  const rows = visibleComments();
+  const rows = sortedComments();
   commentCount.textContent = `コメント: ${rows.length}`;
 
   if (rows.length === 0) {
@@ -420,11 +442,7 @@ function renderComments() {
     const main = document.createElement("div");
     const author = document.createElement("div");
     author.className = "comment-author";
-    const modeLabel =
-      (comment.mode || "compare") === "single"
-        ? (comment.target === "right" ? "右動画" : "左動画")
-        : "比較";
-    author.textContent = `${comment.author} / ${modeLabel}`;
+    author.textContent = comment.author;
 
     const text = document.createElement("button");
     text.className = "comment-text btn";
@@ -470,14 +488,43 @@ function renderComments() {
   });
 }
 
+function setViewMode(nextMode) {
+  viewMode = nextMode === "single" ? "single" : "compare";
+  const singleTarget = singleTargetSelect?.value || "left";
+
+  if (compareModeTab) compareModeTab.classList.toggle("active", viewMode === "compare");
+  if (singleModeTab) singleModeTab.classList.toggle("active", viewMode === "single");
+  if (singleTargetRow) singleTargetRow.classList.toggle("is-hidden", viewMode !== "single");
+
+  if (videoGrid) {
+    videoGrid.classList.remove("single-left", "single-right");
+    if (viewMode === "single") {
+      videoGrid.classList.add(singleTarget === "right" ? "single-right" : "single-left");
+    }
+  }
+
+  if (viewMode === "compare") {
+    leftVideo.muted = false;
+    rightVideo.muted = true;
+  } else if (singleTarget === "right") {
+    leftVideo.muted = true;
+    rightVideo.muted = false;
+  } else {
+    leftVideo.muted = false;
+    rightVideo.muted = true;
+  }
+
+  pauseBoth();
+  syncControlsState();
+  updateTimelineUI();
+}
+
 function toCsvField(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
 }
 
 const EXPORT_FIELDS = [
-  { key: "mode", label: "コメントモード", value: (row) => row.mode || "compare" },
-  { key: "target", label: "対象動画", value: (row) => row.target || "both" },
   { key: "timecode", label: "動画時間", value: (row) => row.timecode },
   { key: "seconds", label: "秒", value: (row) => row.seconds.toFixed(3) },
   { key: "author", label: "記入者", value: (row) => row.author },
@@ -594,17 +641,26 @@ function setExportOverlayVisible(visible) {
 async function runExport() {
   const fields = getSelectedExportFields();
   if (fields.length === 0) return;
-  const rows = visibleComments();
+  const rows = sortedComments();
   const format = getSelectedExportFormat();
   const content = format === "txt" ? buildTxtContent(rows, fields) : buildCsvContent(rows, fields);
   const locationType = getSelectedExportLocationType();
-  let saved = false;
-  if (locationType === "custom") {
-    saved = await saveByHandle(content);
-  }
-  if (!saved && locationType !== "download") {
+  if (locationType === "download") {
     saveByDownload(content, format);
-  } else if (locationType === "download") {
+    setExportOverlayVisible(false);
+    return;
+  }
+
+  // Custom location selected:
+  // If no file has been chosen, fall back to regular download.
+  if (!exportFileHandle) {
+    saveByDownload(content, format);
+    setExportOverlayVisible(false);
+    return;
+  }
+
+  const saved = await saveByHandle(content);
+  if (!saved) {
     saveByDownload(content, format);
   }
   setExportOverlayVisible(false);
@@ -648,8 +704,6 @@ function parseCsvText(text) {
   const headers = table[0];
   const byLabel = (label) => headers.indexOf(label);
   const idx = {
-    mode: byLabel("コメントモード"),
-    target: byLabel("対象動画"),
     timecode: byLabel("動画時間"),
     seconds: byLabel("秒"),
     author: byLabel("記入者"),
@@ -667,16 +721,10 @@ function parseCsvText(text) {
         ? parsedByTimecode
         : 0;
     const updatedRaw = idx.updatedAt >= 0 ? Date.parse(cols[idx.updatedAt]) : NaN;
-    const modeRaw = idx.mode >= 0 ? cols[idx.mode] : "compare";
-    const targetRaw = idx.target >= 0 ? cols[idx.target] : "both";
-    const mode = modeRaw === "single" ? "single" : "compare";
-    const target = targetRaw === "right" ? "right" : targetRaw === "left" ? "left" : "both";
     return {
       id: crypto.randomUUID(),
       author: idx.author >= 0 ? (cols[idx.author] || "未入力") : "未入力",
       text: idx.text >= 0 ? (cols[idx.text] || "") : "",
-      mode,
-      target: mode === "single" ? (target === "both" ? "left" : target) : "both",
       seconds,
       timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
       updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
@@ -703,16 +751,10 @@ function parseTxtText(text) {
         ? parsedByTimecode
         : 0;
     const updatedRaw = Date.parse(map["更新日時"] || "");
-    const modeRaw = map["コメントモード"] || "compare";
-    const targetRaw = map["対象動画"] || "both";
-    const mode = modeRaw === "single" ? "single" : "compare";
-    const target = targetRaw === "right" ? "right" : targetRaw === "left" ? "left" : "both";
     return {
       id: crypto.randomUUID(),
       author: map["記入者"] || "未入力",
       text: map["コメント"] || "",
-      mode,
-      target: mode === "single" ? (target === "both" ? "left" : target) : "both",
       seconds,
       timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
       updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
@@ -729,9 +771,9 @@ async function importCommentsFromFile(file) {
     setMessage("読み込み可能なコメントが見つかりませんでした。");
     return;
   }
-  comments = [...parsed, ...comments];
+  comments = parsed;
   renderComments();
-  setMessage(`${parsed.length}件のコメントを読み込みました。`);
+  setMessage(`${parsed.length}件のコメントで一覧を更新しました。`);
 }
 
 function beginHorizontalResize(event) {
@@ -827,13 +869,15 @@ if (addCommentBtn) {
   addCommentBtn.addEventListener("click", addComment);
 }
 if (compareModeTab) {
-  compareModeTab.addEventListener("click", () => setCommentMode("compare"));
+  compareModeTab.addEventListener("click", () => setViewMode("compare"));
 }
 if (singleModeTab) {
-  singleModeTab.addEventListener("click", () => setCommentMode("single"));
+  singleModeTab.addEventListener("click", () => setViewMode("single"));
 }
 if (singleTargetSelect) {
-  singleTargetSelect.addEventListener("change", renderComments);
+  singleTargetSelect.addEventListener("change", () => {
+    if (viewMode === "single") setViewMode("single");
+  });
 }
 commentInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.shiftKey) {
@@ -898,4 +942,4 @@ syncControlsState();
 renderComments();
 updateTimelineUI();
 updateExportLocationUI();
-setCommentMode("compare");
+setViewMode("compare");

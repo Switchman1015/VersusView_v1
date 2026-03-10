@@ -11,8 +11,20 @@
       <div id="splitLayout" class="split-layout">
         <section id="leftPane" class="left-pane">
           <section id="playerShell" class="player-shell card">
+            <div class="view-mode-row">
+              <div class="view-mode-tabs">
+                <button id="compareModeTab" class="btn mode-tab active" type="button">動画比較</button>
+                <button id="singleModeTab" class="btn mode-tab" type="button">単体チェック</button>
+              </div>
+              <div id="singleTargetRow" class="single-target-row is-hidden">
+                <select id="singleTargetSelect">
+                  <option value="left">左動画</option>
+                  <option value="right">右動画</option>
+                </select>
+              </div>
+            </div>
             <section id="videoGrid" class="video-grid">
-              <article class="video-card card">
+              <article class="video-card card left-card">
                 <input id="leftFile" type="file" accept="video/mp4" hidden />
                 <div id="leftVideoWrap" class="video-wrap">
                   <video id="leftVideo" playsinline></video>
@@ -21,7 +33,7 @@
                 <p id="leftFilename" class="filename">未選択</p>
               </article>
 
-              <article class="video-card card">
+              <article class="video-card card right-card">
                 <input id="rightFile" type="file" accept="video/mp4" hidden />
                 <div id="rightVideoWrap" class="video-wrap">
                   <video id="rightVideo" playsinline muted></video>
@@ -60,20 +72,10 @@
 
         <section class="right-pane">
           <section class="comments card">
-            <div class="comment-mode-tabs">
-              <button id="compareModeTab" class="btn mode-tab active" type="button">２動画比較</button>
-              <button id="singleModeTab" class="btn mode-tab" type="button">動画単体</button>
-            </div>
             <div class="comment-input card-lite">
               <div class="comment-input-head">
                 <h3>コメント記入</h3>
                 <span>Shift+Enterで追加</span>
-              </div>
-              <div id="singleTargetRow" class="single-target-row is-hidden">
-                <select id="singleTargetSelect">
-                  <option value="left">左動画</option>
-                  <option value="right">右動画</option>
-                </select>
               </div>
               <div class="comment-input-row">
                 <div class="field grow">
@@ -127,8 +129,6 @@
         <div class="overlay-section">
           <p class="overlay-label">書き出す項目</p>
           <div class="overlay-grid">
-            <label><input type="checkbox" data-export-field="mode" checked /> コメントモード</label>
-            <label><input type="checkbox" data-export-field="target" checked /> 対象動画</label>
             <label><input type="checkbox" data-export-field="timecode" checked /> 動画時間</label>
             <label><input type="checkbox" data-export-field="seconds" checked /> 秒</label>
             <label><input type="checkbox" data-export-field="author" checked /> 記入者</label>
