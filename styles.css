@@ -357,6 +357,25 @@ video {
   white-space: nowrap;
 }
 
+.speed-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.speed-btn {
+  padding: 5px 9px;
+  font-size: 0.8rem;
+  border-radius: 999px;
+}
+
+.speed-btn.active {
+  background: #0f151f;
+  border-color: #5f6f8c;
+  color: #f1f6ff;
+}
+
 .seek-row {
   margin-top: 10px;
   display: grid;

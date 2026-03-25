@@ -14,12 +14,15 @@ const rightPlaceholder = document.getElementById("rightPlaceholder");
 
 const playStatus = document.getElementById("playStatus");
 const playPauseBtn = document.getElementById("playPauseBtn");
+const secondBackBtn = document.getElementById("secondBackBtn");
 const stepBackBtn = document.getElementById("stepBackBtn");
 const stepForwardBtn = document.getElementById("stepForwardBtn");
+const secondForwardBtn = document.getElementById("secondForwardBtn");
 const seekSlider = document.getElementById("seekSlider");
 const timeInput = document.getElementById("timeInput");
 const durationLabel = document.getElementById("durationLabel");
 const remainLabel = document.getElementById("remainLabel");
+const speedButtons = document.getElementById("speedButtons");
 
 const authorInput = document.getElementById("authorInput");
 const commentInput = document.getElementById("commentInput");
@@ -56,6 +59,7 @@ let isResizingHorizontalPane = false;
 let frameLockRequestId = null;
 let exportFileHandle = null;
 let viewMode = "compare";
+let playbackRateSetting = 1;
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -138,8 +142,10 @@ function syncControlsState() {
     canControl = Boolean(leftVideo.src && rightVideo.src && getDuration() > 0);
   }
   playPauseBtn.disabled = !canControl;
+  secondBackBtn.disabled = !canControl;
   stepBackBtn.disabled = !canControl;
   stepForwardBtn.disabled = !canControl;
+  secondForwardBtn.disabled = !canControl;
   seekSlider.disabled = !canControl;
 }
 
@@ -183,7 +189,7 @@ function syncRightToLeft() {
   if (masterFrame !== slaveFrame) {
     rightVideo.currentTime = masterFrame / fps;
   }
-  rightVideo.playbackRate = 1;
+  rightVideo.playbackRate = Math.abs(playbackRateSetting);
 
   if (isPlaying && rightVideo.paused) {
     rightVideo.play().catch(() => {});
@@ -198,7 +204,7 @@ function stopFrameLock() {
 }
 
 function frameLockTick(_now, metadata) {
-  if (!isPlaying || !canControl) {
+  if (!isPlaying || !canControl || viewMode !== "compare") {
     frameLockRequestId = null;
     return;
   }
@@ -213,7 +219,7 @@ function frameLockTick(_now, metadata) {
     if (slaveFrame !== masterFrame) {
       rightVideo.currentTime = target;
     }
-    rightVideo.playbackRate = 1;
+    rightVideo.playbackRate = Math.abs(playbackRateSetting);
     if (isPlaying && rightVideo.paused) {
       rightVideo.play().catch(() => {});
     }
@@ -228,7 +234,7 @@ function frameLockTick(_now, metadata) {
 
 function startFrameLock() {
   stopFrameLock();
-  if (!isPlaying || !canControl) return;
+  if (!isPlaying || !canControl || viewMode !== "compare") return;
   if (typeof leftVideo.requestVideoFrameCallback === "function") {
     frameLockRequestId = leftVideo.requestVideoFrameCallback(frameLockTick);
   }
@@ -250,6 +256,7 @@ function startTick() {
 function pauseBoth() {
   leftVideo.pause();
   rightVideo.pause();
+  leftVideo.playbackRate = 1;
   rightVideo.playbackRate = 1;
   stopFrameLock();
   setPlayingState(false);
@@ -261,20 +268,28 @@ function pauseBoth() {
 
 function playBoth() {
   if (!canControl) return;
+  stopFrameLock();
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  const forwardRate = playbackRateSetting;
   if (viewMode === "single") {
     const singleTarget = singleTargetSelect?.value || "left";
     const video = singleTarget === "right" ? rightVideo : leftVideo;
     const other = singleTarget === "right" ? leftVideo : rightVideo;
     other.pause();
+    video.playbackRate = forwardRate;
     Promise.allSettled([video.play()]).then(() => {
       setPlayingState(true);
       startTick();
-      stopFrameLock();
     });
     return;
   }
   const t = leftVideo.currentTime;
   rightVideo.currentTime = t;
+  leftVideo.playbackRate = forwardRate;
+  rightVideo.playbackRate = forwardRate;
 
   Promise.allSettled([leftVideo.play(), rightVideo.play()]).then(() => {
     setPlayingState(true);
@@ -311,6 +326,15 @@ function stepFrame(dir) {
   pauseBoth();
   const next = leftVideo.currentTime + frameDuration * dir;
   seekBoth(next, false);
+}
+
+function stepSecond(dir) {
+  if (!canControl) return;
+  pauseBoth();
+  const base = viewMode === "single"
+    ? ((singleTargetSelect?.value || "left") === "right" ? rightVideo.currentTime : leftVideo.currentTime)
+    : leftVideo.currentTime;
+  seekBoth(base + dir, false);
 }
 
 function recalcFrameDuration() {
@@ -517,6 +541,19 @@ function setViewMode(nextMode) {
   pauseBoth();
   syncControlsState();
   updateTimelineUI();
+}
+
+function setPlaybackRateSetting(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return;
+  playbackRateSetting = Math.max(0.25, Math.min(5, parsed));
+  if (speedButtons) {
+    const buttons = speedButtons.querySelectorAll(".speed-btn");
+    buttons.forEach((btn) => {
+      const rate = Number(btn.getAttribute("data-speed"));
+      btn.classList.toggle("active", Math.abs(rate - playbackRateSetting) < 0.0001);
+    });
+  }
 }
 
 function toCsvField(value) {
@@ -831,6 +868,8 @@ function setupVideoPickerOnSurface(videoWrap, videoEl, fileInput, filenameEl, pl
 
 stepBackBtn.addEventListener("click", () => stepFrame(-1));
 stepForwardBtn.addEventListener("click", () => stepFrame(1));
+secondBackBtn.addEventListener("click", () => stepSecond(-1));
+secondForwardBtn.addEventListener("click", () => stepSecond(1));
 
 seekSlider.addEventListener("input", () => {
   if (!canControl) return;
@@ -877,6 +916,21 @@ if (singleModeTab) {
 if (singleTargetSelect) {
   singleTargetSelect.addEventListener("change", () => {
     if (viewMode === "single") setViewMode("single");
+  });
+}
+if (speedButtons) {
+  speedButtons.addEventListener("click", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".speed-btn");
+    if (!btn) return;
+    const value = btn.getAttribute("data-speed");
+    if (!value) return;
+    setPlaybackRateSetting(value);
+    if (isPlaying) {
+      pauseBoth();
+      playBoth();
+    }
   });
 }
 commentInput.addEventListener("keydown", (e) => {
@@ -943,3 +997,4 @@ renderComments();
 updateTimelineUI();
 updateExportLocationUI();
 setViewMode("compare");
+setPlaybackRateSetting(1);
