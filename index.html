@@ -13,10 +13,10 @@
           <section id="playerShell" class="player-shell card">
             <div class="view-mode-row">
               <div class="view-mode-tabs">
-                <button id="compareModeTab" class="btn mode-tab active" type="button">動画比較</button>
-                <button id="singleModeTab" class="btn mode-tab" type="button">単体チェック</button>
+                <button id="singleModeTab" class="btn mode-tab active" type="button">単体チェック</button>
+                <button id="compareModeTab" class="btn mode-tab" type="button">動画比較</button>
               </div>
-              <div id="singleTargetRow" class="single-target-row is-hidden">
+              <div id="singleTargetRow" class="single-target-row">
                 <select id="singleTargetSelect">
                   <option value="left">左動画</option>
                   <option value="right">右動画</option>
@@ -50,19 +50,28 @@
                   <span id="durationLabel">/ 00:00:00</span>
                 </div>
                 <div class="transport">
+                  <button id="tenSecondBackBtn" class="btn icon-btn" type="button" title="10秒戻る">«10s</button>
                   <button id="secondBackBtn" class="btn icon-btn" type="button" title="1秒戻る">«1s</button>
                   <button id="stepBackBtn" class="btn icon-btn" type="button" title="コマ戻り">◀|</button>
                   <button id="playPauseBtn" class="btn btn-primary icon-btn play-btn" type="button" title="再生 / 停止">▶</button>
                   <button id="stepForwardBtn" class="btn icon-btn" type="button" title="コマ送り">|▶</button>
                   <button id="secondForwardBtn" class="btn icon-btn" type="button" title="1秒進む">1s»</button>
+                  <button id="tenSecondForwardBtn" class="btn icon-btn" type="button" title="10秒進む">10s»</button>
                 </div>
                 <div class="meta">
                   <span id="playStatus" class="status-badge">停止中</span>
+                  <label class="volume-control" for="volumeSlider">
+                    <span>音量</span>
+                    <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="1" aria-label="音量" />
+                  </label>
                 </div>
               </div>
 
               <div class="seek-row">
-                <input id="seekSlider" type="range" min="0" max="1" step="0.001" value="0" />
+                <div class="seek-track">
+                  <div id="seekMarkers" class="seek-markers" aria-hidden="true"></div>
+                  <input id="seekSlider" type="range" min="0" max="1" step="0.001" value="0" />
+                </div>
                 <span id="remainLabel" class="label-mono">-00:00:00</span>
               </div>
               <div id="speedButtons" class="speed-row">

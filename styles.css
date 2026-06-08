@@ -8,6 +8,10 @@
   --primary: #ff2f6d;
   --primary-strong: #dd1652;
   --danger: #ff5b6b;
+  --seek-thumb-size: 18px;
+  --seek-track-height: 6px;
+  --comment-marker: #4fd7ff;
+  --comment-marker-strong: #a3ecff;
 }
 
 html,
@@ -255,7 +259,7 @@ video {
 }
 
 .player-bar {
-  flex: 0 0 128px;
+  flex: 0 0 166px;
   background: transparent;
   height: auto;
   overflow: hidden;
@@ -351,10 +355,28 @@ video {
 .meta {
   grid-column: 3;
   justify-self: end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.volume-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.volume-control input {
+  width: 104px;
+  margin: 0;
+  accent-color: var(--primary);
 }
 
 .speed-row {
@@ -384,6 +406,40 @@ video {
   gap: 10px;
 }
 
+.seek-track {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.seek-markers {
+  position: absolute;
+  top: 0;
+  right: calc(var(--seek-thumb-size) / 2);
+  bottom: 0;
+  left: calc(var(--seek-thumb-size) / 2);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.seek-marker {
+  --marker-scale: 1;
+  --marker-width: 4px;
+  position: absolute;
+  top: 50%;
+  width: var(--marker-width);
+  height: 22px;
+  transform: translate(-50%, -50%) scaleY(var(--marker-scale));
+  transform-origin: center;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(79, 215, 255, 0.18) 0%, var(--comment-marker-strong) 45%, var(--comment-marker) 55%, rgba(79, 215, 255, 0.18) 100%);
+  box-shadow:
+    0 0 0 1px rgba(7, 12, 20, 0.82),
+    0 0 8px rgba(79, 215, 255, 0.36);
+  opacity: 1;
+}
+
 .label-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: #c8d2e8;
@@ -391,8 +447,54 @@ video {
 }
 
 #seekSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  z-index: 2;
   width: 100%;
-  accent-color: var(--primary);
+  height: var(--seek-thumb-size);
+  background: transparent;
+  margin: 0;
+}
+
+#seekSlider::-webkit-slider-runnable-track {
+  height: var(--seek-track-height);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #293346 0%, #1a2230 100%);
+  border: 1px solid #334055;
+}
+
+#seekSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--seek-thumb-size);
+  height: var(--seek-thumb-size);
+  margin-top: calc((var(--seek-track-height) - var(--seek-thumb-size)) / 2);
+  border: 2px solid #121826;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ff7aa5 0%, var(--primary) 100%);
+  box-shadow: 0 2px 10px rgba(255, 47, 109, 0.36);
+}
+
+#seekSlider::-moz-range-track {
+  height: var(--seek-track-height);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #293346 0%, #1a2230 100%);
+  border: 1px solid #334055;
+}
+
+#seekSlider::-moz-range-thumb {
+  width: var(--seek-thumb-size);
+  height: var(--seek-thumb-size);
+  border: 2px solid #121826;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ff7aa5 0%, var(--primary) 100%);
+  box-shadow: 0 2px 10px rgba(255, 47, 109, 0.36);
+}
+
+#seekSlider::-moz-range-progress {
+  height: var(--seek-track-height);
+  border-radius: 999px;
+  background: rgba(255, 47, 109, 0.36);
 }
 
 .hint {
@@ -609,6 +711,28 @@ select {
   font-size: 0.78rem;
 }
 
+.inline-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.inline-editor-input {
+  width: 100%;
+  min-height: 74px;
+  border: 1px solid #495469;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  background: #111722;
+  color: #edf2ff;
+  resize: vertical;
+}
+
+.inline-editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .status-message {
   margin: 0;
   color: var(--muted);
@@ -730,7 +854,7 @@ button:disabled {
   }
 
   .player-bar {
-    flex-basis: 148px;
+    flex-basis: 186px;
   }
 
   .top-controls {
@@ -745,6 +869,10 @@ button:disabled {
 
   .meta {
     justify-self: start;
+  }
+
+  .volume-control input {
+    width: 132px;
   }
 
   .seek-row {

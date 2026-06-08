@@ -14,15 +14,19 @@ const rightPlaceholder = document.getElementById("rightPlaceholder");
 
 const playStatus = document.getElementById("playStatus");
 const playPauseBtn = document.getElementById("playPauseBtn");
+const tenSecondBackBtn = document.getElementById("tenSecondBackBtn");
 const secondBackBtn = document.getElementById("secondBackBtn");
 const stepBackBtn = document.getElementById("stepBackBtn");
 const stepForwardBtn = document.getElementById("stepForwardBtn");
 const secondForwardBtn = document.getElementById("secondForwardBtn");
+const tenSecondForwardBtn = document.getElementById("tenSecondForwardBtn");
 const seekSlider = document.getElementById("seekSlider");
+const seekMarkers = document.getElementById("seekMarkers");
 const timeInput = document.getElementById("timeInput");
 const durationLabel = document.getElementById("durationLabel");
 const remainLabel = document.getElementById("remainLabel");
 const speedButtons = document.getElementById("speedButtons");
+const volumeSlider = document.getElementById("volumeSlider");
 
 const authorInput = document.getElementById("authorInput");
 const commentInput = document.getElementById("commentInput");
@@ -60,10 +64,16 @@ let frameLockRequestId = null;
 let exportFileHandle = null;
 let viewMode = "compare";
 let playbackRateSetting = 1;
+let volumeSetting = 1;
 
 leftVideo.controls = false;
 rightVideo.controls = false;
 rightVideo.muted = true;
+
+function applyVolumeSetting() {
+  leftVideo.volume = volumeSetting;
+  rightVideo.volume = volumeSetting;
+}
 
 function setMessage(text) {
   if (!statusMessage) return;
@@ -142,10 +152,12 @@ function syncControlsState() {
     canControl = Boolean(leftVideo.src && rightVideo.src && getDuration() > 0);
   }
   playPauseBtn.disabled = !canControl;
+  tenSecondBackBtn.disabled = !canControl;
   secondBackBtn.disabled = !canControl;
   stepBackBtn.disabled = !canControl;
   stepForwardBtn.disabled = !canControl;
   secondForwardBtn.disabled = !canControl;
+  tenSecondForwardBtn.disabled = !canControl;
   seekSlider.disabled = !canControl;
 }
 
@@ -173,6 +185,52 @@ function updateTimelineUI() {
   durationLabel.textContent = `/ ${formatTime(duration)}`;
   const remain = Math.max(duration - current, 0);
   remainLabel.textContent = `-${formatTime(remain)}`;
+}
+
+function renderSeekMarkers() {
+  if (!seekMarkers) return;
+
+  const duration = getDuration();
+  seekMarkers.innerHTML = "";
+
+  if (!Number.isFinite(duration) || duration <= 0 || comments.length === 0) return;
+
+  const grouped = new Map();
+  comments.forEach((comment) => {
+    if (!Number.isFinite(comment.seconds)) return;
+    if (comment.seconds < 0 || comment.seconds > duration) return;
+
+    const ratio = comment.seconds / duration;
+    const clampedRatio = Math.min(Math.max(ratio, 0.001), 0.999);
+    const key = clampedRatio.toFixed(4);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    grouped.set(key, {
+      ratio: clampedRatio,
+      count: 1,
+      timecode: comment.timecode
+    });
+  });
+
+  [...grouped.values()]
+    .sort((a, b) => a.ratio - b.ratio)
+    .forEach((markerInfo) => {
+      const marker = document.createElement("span");
+      marker.className = "seek-marker";
+      marker.style.left = `${markerInfo.ratio * 100}%`;
+      marker.style.setProperty("--marker-scale", String(Math.min(1.8, 1 + (markerInfo.count - 1) * 0.18)));
+      if (markerInfo.count > 1) {
+        marker.style.setProperty("--marker-width", "4px");
+      }
+      marker.title =
+        markerInfo.count > 1
+          ? `${markerInfo.timecode} に ${markerInfo.count} 件`
+          : `${markerInfo.timecode} にコメント`;
+      seekMarkers.appendChild(marker);
+    });
 }
 
 function syncRightToLeft() {
@@ -298,8 +356,13 @@ function playBoth() {
   });
 }
 
-function seekBoth(seconds, resume = false) {
+function seekBoth(seconds, resume = false, options = {}) {
   if (!canControl) return;
+  const { preserveScrubbing = false } = options;
+
+  if (!preserveScrubbing) {
+    isScrubbing = false;
+  }
 
   const duration = getDuration();
   const clamped = Math.min(Math.max(seconds, 0), duration);
@@ -337,6 +400,15 @@ function stepSecond(dir) {
   seekBoth(base + dir, false);
 }
 
+function stepTenSeconds(dir) {
+  if (!canControl) return;
+  pauseBoth();
+  const base = viewMode === "single"
+    ? ((singleTargetSelect?.value || "left") === "right" ? rightVideo.currentTime : leftVideo.currentTime)
+    : leftVideo.currentTime;
+  seekBoth(base + dir * 10, false);
+}
+
 function recalcFrameDuration() {
   // Browser APIs do not expose FPS reliably. Keep stable default.
   frameDuration = 1 / 30;
@@ -346,6 +418,7 @@ function onVideoLoaded() {
   recalcFrameDuration();
   syncControlsState();
   updateTimelineUI();
+  renderSeekMarkers();
   if (canControl) {
     seekBoth(0, false);
     if (viewMode === "compare") {
@@ -447,6 +520,7 @@ function sortedComments(source) {
 function renderComments() {
   const rows = sortedComments();
   commentCount.textContent = `コメント: ${rows.length}`;
+  renderSeekMarkers();
 
   if (rows.length === 0) {
     commentsList.innerHTML = '<div class="comment-item"><div class="comment-time">--:--:--</div><div class="comment-text" style="color:#667088">コメントはまだありません</div><div></div></div>';
@@ -489,13 +563,52 @@ function renderComments() {
     edit.className = "btn";
     edit.textContent = "編集";
     edit.addEventListener("click", () => {
-      const updated = prompt("コメントを編集", comment.text);
-      if (updated === null) return;
-      const trimmed = updated.trim();
-      if (!trimmed) return;
-      comment.text = trimmed;
-      comment.updatedAt = Date.now();
-      renderComments();
+      const editor = document.createElement("div");
+      editor.className = "inline-editor";
+
+      const input = document.createElement("textarea");
+      input.className = "inline-editor-input";
+      input.value = comment.text;
+
+      const row = document.createElement("div");
+      row.className = "inline-editor-actions";
+
+      const save = document.createElement("button");
+      save.className = "btn btn-primary";
+      save.textContent = "保存";
+      const saveInlineEdit = () => {
+        const trimmed = input.value.trim();
+        if (!trimmed) return;
+        comment.text = trimmed;
+        comment.updatedAt = Date.now();
+        renderComments();
+      };
+      save.addEventListener("click", saveInlineEdit);
+
+      const cancel = document.createElement("button");
+      cancel.className = "btn";
+      cancel.textContent = "キャンセル";
+      cancel.addEventListener("click", () => {
+        renderComments();
+      });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.shiftKey) {
+          e.preventDefault();
+          saveInlineEdit();
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          renderComments();
+        }
+      });
+
+      row.append(save, cancel);
+      editor.append(input, row);
+      main.replaceChild(editor, text);
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
     });
 
     const remove = document.createElement("button");
@@ -538,9 +651,11 @@ function setViewMode(nextMode) {
     rightVideo.muted = true;
   }
 
+  applyVolumeSetting();
   pauseBoth();
   syncControlsState();
   updateTimelineUI();
+  renderSeekMarkers();
 }
 
 function setPlaybackRateSetting(value) {
@@ -553,6 +668,30 @@ function setPlaybackRateSetting(value) {
       const rate = Number(btn.getAttribute("data-speed"));
       btn.classList.toggle("active", Math.abs(rate - playbackRateSetting) < 0.0001);
     });
+  }
+}
+
+function getAvailablePlaybackRates() {
+  if (!speedButtons) return [playbackRateSetting];
+  return [...speedButtons.querySelectorAll(".speed-btn")]
+    .map((btn) => Number(btn.getAttribute("data-speed")))
+    .filter((rate) => Number.isFinite(rate))
+    .sort((a, b) => a - b);
+}
+
+function stepPlaybackRate(direction) {
+  const rates = getAvailablePlaybackRates();
+  if (rates.length === 0) return;
+
+  const currentIndex = rates.findIndex((rate) => Math.abs(rate - playbackRateSetting) < 0.0001);
+  const safeIndex = currentIndex === -1 ? rates.indexOf(1) : currentIndex;
+  const nextIndex = Math.min(Math.max(safeIndex + direction, 0), rates.length - 1);
+  if (nextIndex === safeIndex) return;
+
+  setPlaybackRateSetting(rates[nextIndex]);
+  if (isPlaying) {
+    pauseBoth();
+    playBoth();
   }
 }
 
@@ -813,6 +952,69 @@ async function importCommentsFromFile(file) {
   setMessage(`${parsed.length}件のコメントで一覧を更新しました。`);
 }
 
+function isEditableTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+}
+
+function handleGlobalShortcut(event) {
+  if (exportOverlay && !exportOverlay.classList.contains("hidden")) return;
+  if (isEditableTarget(event.target)) return;
+  if (event.altKey || event.metaKey) return;
+
+  if (event.ctrlKey && event.key === "ArrowLeft") {
+    if (!canControl) return;
+    event.preventDefault();
+    stepTenSeconds(-1);
+    return;
+  }
+
+  if (event.ctrlKey && event.key === "ArrowRight") {
+    if (!canControl) return;
+    event.preventDefault();
+    stepTenSeconds(1);
+    return;
+  }
+
+  if (event.ctrlKey) return;
+
+  if (event.key === " ") {
+    if (!canControl) return;
+    if (event.repeat) return;
+    event.preventDefault();
+    if (isPlaying) pauseBoth();
+    else playBoth();
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    if (!canControl) return;
+    event.preventDefault();
+    if (event.shiftKey) stepSecond(-1);
+    else stepFrame(-1);
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    if (!canControl) return;
+    event.preventDefault();
+    if (event.shiftKey) stepSecond(1);
+    else stepFrame(1);
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    stepPlaybackRate(1);
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    stepPlaybackRate(-1);
+  }
+}
+
 function beginHorizontalResize(event) {
   isResizingHorizontalPane = true;
   document.body.classList.add("resizing");
@@ -868,8 +1070,10 @@ function setupVideoPickerOnSurface(videoWrap, videoEl, fileInput, filenameEl, pl
 
 stepBackBtn.addEventListener("click", () => stepFrame(-1));
 stepForwardBtn.addEventListener("click", () => stepFrame(1));
+tenSecondBackBtn.addEventListener("click", () => stepTenSeconds(-1));
 secondBackBtn.addEventListener("click", () => stepSecond(-1));
 secondForwardBtn.addEventListener("click", () => stepSecond(1));
+tenSecondForwardBtn.addEventListener("click", () => stepTenSeconds(1));
 
 seekSlider.addEventListener("input", () => {
   if (!canControl) return;
@@ -878,7 +1082,7 @@ seekSlider.addEventListener("input", () => {
   const duration = getDuration();
   const target = Number(seekSlider.value) * duration;
   timeInput.value = formatTime(target);
-  seekBoth(target, false);
+  seekBoth(target, false, { preserveScrubbing: true });
 });
 
 seekSlider.addEventListener("change", () => {
@@ -933,6 +1137,14 @@ if (speedButtons) {
     }
   });
 }
+if (volumeSlider) {
+  volumeSlider.addEventListener("input", () => {
+    const parsed = Number(volumeSlider.value);
+    if (!Number.isFinite(parsed)) return;
+    volumeSetting = Math.max(0, Math.min(1, parsed));
+    applyVolumeSetting();
+  });
+}
 commentInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.shiftKey) {
     e.preventDefault();
@@ -958,6 +1170,7 @@ if (exportOverlay) {
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") setExportOverlayVisible(false);
 });
+window.addEventListener("keydown", handleGlobalShortcut);
 if (chooseExportLocationBtn) {
   chooseExportLocationBtn.addEventListener("click", chooseExportLocation);
 }
@@ -996,5 +1209,6 @@ syncControlsState();
 renderComments();
 updateTimelineUI();
 updateExportLocationUI();
-setViewMode("compare");
+applyVolumeSetting();
+setViewMode("single");
 setPlaybackRateSetting(1);
