@@ -116,18 +116,17 @@
               <div class="comment-settings-row">
                 <div class="field grow">
                   <label for="tagSelect">タグ</label>
-                  <div id="tagButtons" class="choice-buttons" role="group" aria-label="タグ"></div>
+                  <div id="tagButtons" class="choice-buttons tag-rail" role="group" aria-label="タグ"></div>
                   <input id="tagSelect" type="hidden" value="none" />
                 </div>
                 <div class="field grow">
                   <label for="commentTimeModeSelect">コメント時間</label>
-                  <div class="time-setting-panel">
-                    <div id="commentTimeModeButtons" class="choice-buttons compact" role="group" aria-label="コメント時間"></div>
+                  <div class="time-setting-row">
+                    <div id="commentTimeModeButtons" class="choice-buttons compact segment-switch" role="group" aria-label="コメント時間"></div>
                     <div id="manualTimeField" class="time-entry-row">
                       <input id="manualTimeInput" type="text" placeholder="00:00:00" aria-label="コメント時間入力" />
-                      <button id="copyCurrentTimeBtn" class="btn time-fill-btn" type="button">現在を固定</button>
+                      <button id="copyCurrentTimeBtn" class="btn time-fill-btn" type="button">今</button>
                     </div>
-                    <p id="commentTimeHint" class="field-note">このまま追加すると表示中の時間で登録します。</p>
                   </div>
                   <input id="commentTimeModeSelect" type="hidden" value="auto" />
                 </div>

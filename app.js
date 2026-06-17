@@ -78,25 +78,25 @@ const COMMENT_TIME_MODES = [
     value: "auto",
     label: "自動（表示画面の時間）",
     shortLabel: "自動",
-    buttonLabel: "表示時間",
+    buttonLabel: "現在時間",
     hint: "このまま追加すると表示中の時間で登録します。",
-    actionLabel: "現在を固定"
+    actionLabel: "今"
   },
   {
     value: "manual",
     label: "手動入力",
     shortLabel: "固定",
-    buttonLabel: "固定",
+    buttonLabel: "手動",
     hint: "必要なら時間を直接修正できます。",
-    actionLabel: "今の時間"
+    actionLabel: "今"
   },
   {
     value: "none",
     label: "無し",
     shortLabel: "無し",
-    buttonLabel: "無し",
+    buttonLabel: "指定無し",
     hint: "時間を付けずにコメントを追加します。",
-    actionLabel: "時間を入れる"
+    actionLabel: "今"
   }
 ];
 
@@ -142,7 +142,7 @@ function getTimeModeLabel(modeValue) {
 
 function getTimeModeButtonLabel(modeValue) {
   const mode = COMMENT_TIME_MODES.find((entry) => entry.value === modeValue);
-  return mode?.buttonLabel || mode?.shortLabel || mode?.label || "表示時間";
+  return mode?.buttonLabel || mode?.shortLabel || mode?.label || "現在時間";
 }
 
 function getTimeModeExportLabel(modeValue) {
@@ -324,12 +324,13 @@ function updateManualTimeField() {
   } else {
     manualTimeInput.disabled = true;
     manualTimeInput.readOnly = true;
-    manualTimeInput.value = "";
-    manualTimeInput.placeholder = "時間なし";
+    manualTimeInput.value = "--:--:--";
+    manualTimeInput.placeholder = "--:--:--";
   }
 
   if (copyCurrentTimeBtn) {
     copyCurrentTimeBtn.textContent = getTimeModeActionLabel(modeValue);
+    copyCurrentTimeBtn.classList.toggle("is-hidden", modeValue !== "manual");
   }
   if (commentTimeHint) {
     commentTimeHint.textContent = getTimeModeHint(modeValue);
@@ -415,12 +416,7 @@ function updateVideoSizing(videoEl) {
   if (!videoEl) return;
   const wrap = videoEl === leftVideo ? leftVideoWrap : rightVideoWrap;
   if (!wrap) return;
-
-  const sourceWidth = videoEl.videoWidth || 0;
-  const sourceHeight = videoEl.videoHeight || 0;
-  const orientation =
-    sourceWidth === sourceHeight ? "square" : sourceWidth > sourceHeight ? "landscape" : "portrait";
-  wrap.dataset.videoOrientation = orientation;
+  wrap.dataset.videoReady = "true";
 }
 
 function getDuration() {
@@ -945,7 +941,7 @@ function renderComments() {
       const inlineTimePanel = document.createElement("div");
       inlineTimePanel.className = "time-setting-panel";
       const timeModeEditorButtons = document.createElement("div");
-      timeModeEditorButtons.className = "choice-buttons compact";
+      timeModeEditorButtons.className = "choice-buttons compact segment-switch";
       const manualField = document.createElement("div");
       manualField.className = "time-entry-row";
       const manualEditorInput = document.createElement("input");
