@@ -114,29 +114,22 @@
                 </div>
               </div>
               <div class="comment-settings-row">
-                <div class="field compact">
+                <div class="field grow">
                   <label for="tagSelect">タグ</label>
-                  <select id="tagSelect">
-                    <option value="none">ー</option>
-                    <option value="caption">テロップ</option>
-                    <option value="design">デザイン</option>
-                    <option value="audio">音声</option>
-                    <option value="video">映像</option>
-                    <option value="transition">切り替わり</option>
-                    <option value="other">その他</option>
-                  </select>
+                  <div id="tagButtons" class="choice-buttons" role="group" aria-label="タグ"></div>
+                  <input id="tagSelect" type="hidden" value="none" />
                 </div>
-                <div class="field compact">
+                <div class="field grow">
                   <label for="commentTimeModeSelect">コメント時間</label>
-                  <select id="commentTimeModeSelect">
-                    <option value="auto">自動（表示画面の時間）</option>
-                    <option value="manual">手動入力</option>
-                    <option value="none">無し</option>
-                  </select>
-                </div>
-                <div id="manualTimeField" class="field compact is-hidden">
-                  <label for="manualTimeInput">手動時間</label>
-                  <input id="manualTimeInput" type="text" placeholder="00:00:00" />
+                  <div class="time-setting-panel">
+                    <div id="commentTimeModeButtons" class="choice-buttons compact" role="group" aria-label="コメント時間"></div>
+                    <div id="manualTimeField" class="time-entry-row">
+                      <input id="manualTimeInput" type="text" placeholder="00:00:00" aria-label="コメント時間入力" />
+                      <button id="copyCurrentTimeBtn" class="btn time-fill-btn" type="button">現在を固定</button>
+                    </div>
+                    <p id="commentTimeHint" class="field-note">このまま追加すると表示中の時間で登録します。</p>
+                  </div>
+                  <input id="commentTimeModeSelect" type="hidden" value="auto" />
                 </div>
               </div>
             </div>

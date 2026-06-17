@@ -36,10 +36,14 @@ const compareModeTab = document.getElementById("compareModeTab");
 const singleModeTab = document.getElementById("singleModeTab");
 const singleTargetRow = document.getElementById("singleTargetRow");
 const singleTargetSelect = document.getElementById("singleTargetSelect");
+const tagButtons = document.getElementById("tagButtons");
 const tagSelect = document.getElementById("tagSelect");
+const commentTimeModeButtons = document.getElementById("commentTimeModeButtons");
 const commentTimeModeSelect = document.getElementById("commentTimeModeSelect");
 const manualTimeField = document.getElementById("manualTimeField");
 const manualTimeInput = document.getElementById("manualTimeInput");
+const copyCurrentTimeBtn = document.getElementById("copyCurrentTimeBtn");
+const commentTimeHint = document.getElementById("commentTimeHint");
 const commentsList = document.getElementById("commentsList");
 const commentCount = document.getElementById("commentCount");
 const sortType = document.getElementById("sortType");
@@ -70,9 +74,30 @@ const COMMENT_TAGS = [
   { value: "other", label: "その他" }
 ];
 const COMMENT_TIME_MODES = [
-  { value: "auto", label: "自動（表示画面の時間）", shortLabel: "自動" },
-  { value: "manual", label: "手動入力", shortLabel: "手動入力" },
-  { value: "none", label: "無し", shortLabel: "無し" }
+  {
+    value: "auto",
+    label: "自動（表示画面の時間）",
+    shortLabel: "自動",
+    buttonLabel: "表示時間",
+    hint: "このまま追加すると表示中の時間で登録します。",
+    actionLabel: "現在を固定"
+  },
+  {
+    value: "manual",
+    label: "手動入力",
+    shortLabel: "固定",
+    buttonLabel: "固定",
+    hint: "必要なら時間を直接修正できます。",
+    actionLabel: "今の時間"
+  },
+  {
+    value: "none",
+    label: "無し",
+    shortLabel: "無し",
+    buttonLabel: "無し",
+    hint: "時間を付けずにコメントを追加します。",
+    actionLabel: "時間を入れる"
+  }
 ];
 
 let canControl = false;
@@ -88,6 +113,9 @@ let exportFileHandle = null;
 let viewMode = "compare";
 let playbackRateSetting = 1;
 let volumeSetting = 1;
+let composerManualTimeDraft = "";
+let tagButtonsController = null;
+let commentTimeModeButtonsController = null;
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -112,8 +140,21 @@ function getTimeModeLabel(modeValue) {
   return mode?.shortLabel || mode?.label || "自動";
 }
 
+function getTimeModeButtonLabel(modeValue) {
+  const mode = COMMENT_TIME_MODES.find((entry) => entry.value === modeValue);
+  return mode?.buttonLabel || mode?.shortLabel || mode?.label || "表示時間";
+}
+
 function getTimeModeExportLabel(modeValue) {
   return COMMENT_TIME_MODES.find((mode) => mode.value === modeValue)?.label || "自動（表示画面の時間）";
+}
+
+function getTimeModeHint(modeValue) {
+  return COMMENT_TIME_MODES.find((mode) => mode.value === modeValue)?.hint || "このまま追加すると表示中の時間で登録します。";
+}
+
+function getTimeModeActionLabel(modeValue) {
+  return COMMENT_TIME_MODES.find((mode) => mode.value === modeValue)?.actionLabel || "現在を固定";
 }
 
 function normalizeCommentTag(tagValue) {
@@ -199,13 +240,132 @@ function getCommentDisplayTime(comment) {
   return isTimedComment(comment) ? comment.timecode : "—";
 }
 
+function createChoiceButtonsController({
+  container,
+  options,
+  initialValue,
+  normalizeValue,
+  getLabel,
+  kind,
+  onChange = null
+}) {
+  if (!container) return null;
+
+  let currentValue = normalizeValue(initialValue);
+
+  const sync = () => {
+    const buttons = container.querySelectorAll(".choice-btn");
+    buttons.forEach((button) => {
+      const isActive = button.dataset.value === currentValue;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  };
+
+  const setValue = (nextValue, { notify = true } = {}) => {
+    currentValue = normalizeValue(nextValue);
+    sync();
+    if (notify && typeof controller.onChange === "function") {
+      controller.onChange(currentValue);
+    }
+  };
+
+  container.innerHTML = "";
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice-btn";
+    button.dataset.value = option.value;
+    if (kind === "tag") button.dataset.tag = option.value;
+    if (kind === "timeMode") button.dataset.timeMode = option.value;
+    button.textContent = getLabel(option);
+    button.addEventListener("click", () => {
+      setValue(option.value);
+    });
+    container.appendChild(button);
+  });
+
+  const controller = {
+    element: container,
+    onChange,
+    getValue: () => currentValue,
+    setValue
+  };
+
+  sync();
+  return controller;
+}
+
+function getDisplayedTimelineTime() {
+  return timeInput?.value || "00:00:00";
+}
+
 function updateManualTimeField() {
-  if (!manualTimeField || !commentTimeModeSelect) return;
-  const isManual = commentTimeModeSelect.value === "manual";
-  manualTimeField.classList.toggle("is-hidden", !isManual);
-  if (isManual && manualTimeInput && !manualTimeInput.value.trim()) {
-    manualTimeInput.value = timeInput?.value || "00:00:00";
+  if (!manualTimeField || !commentTimeModeSelect || !manualTimeInput) return;
+
+  const modeValue = normalizeCommentTimeMode(commentTimeModeSelect.value);
+  const wasDisabled = manualTimeInput.disabled;
+  manualTimeField.dataset.mode = modeValue;
+  manualTimeInput.dataset.mode = modeValue;
+
+  if (modeValue === "manual") {
+    const nextValue = composerManualTimeDraft.trim() || getDisplayedTimelineTime();
+    manualTimeInput.disabled = false;
+    manualTimeInput.readOnly = false;
+    manualTimeInput.placeholder = "00:00:00";
+    if (!manualTimeInput.value.trim() || wasDisabled) {
+      manualTimeInput.value = nextValue;
+    }
+  } else if (modeValue === "auto") {
+    manualTimeInput.disabled = true;
+    manualTimeInput.readOnly = true;
+    manualTimeInput.value = getDisplayedTimelineTime();
+    manualTimeInput.placeholder = getDisplayedTimelineTime();
+  } else {
+    manualTimeInput.disabled = true;
+    manualTimeInput.readOnly = true;
+    manualTimeInput.value = "";
+    manualTimeInput.placeholder = "時間なし";
   }
+
+  if (copyCurrentTimeBtn) {
+    copyCurrentTimeBtn.textContent = getTimeModeActionLabel(modeValue);
+  }
+  if (commentTimeHint) {
+    commentTimeHint.textContent = getTimeModeHint(modeValue);
+  }
+}
+
+function syncComposerCurrentTimePreview() {
+  if (!manualTimeInput || normalizeCommentTimeMode(commentTimeModeSelect?.value) !== "auto") return;
+  manualTimeInput.value = getDisplayedTimelineTime();
+}
+
+function setComposerTagValue(value) {
+  const nextValue = normalizeCommentTag(value);
+  if (tagSelect) tagSelect.value = nextValue;
+  tagButtonsController?.setValue(nextValue, { notify: false });
+}
+
+function setComposerTimeMode(value) {
+  const nextValue = normalizeCommentTimeMode(value);
+  const previousValue = normalizeCommentTimeMode(commentTimeModeSelect?.value);
+  if (previousValue === "manual" && manualTimeInput?.value.trim()) {
+    composerManualTimeDraft = manualTimeInput.value.trim();
+  }
+  if (commentTimeModeSelect) commentTimeModeSelect.value = nextValue;
+  commentTimeModeButtonsController?.setValue(nextValue, { notify: false });
+  updateManualTimeField();
+}
+
+function applyCurrentTimeToComposer() {
+  const currentTime = getDisplayedTimelineTime();
+  composerManualTimeDraft = currentTime;
+  setComposerTimeMode("manual");
+  if (!manualTimeInput) return;
+  manualTimeInput.value = currentTime;
+  manualTimeInput.focus();
+  manualTimeInput.setSelectionRange(manualTimeInput.value.length, manualTimeInput.value.length);
 }
 
 function applyModeFeatureFlags() {
@@ -343,6 +503,7 @@ function updateTimelineUI() {
   durationLabel.textContent = `/ ${formatTime(duration)}`;
   const remain = Math.max(duration - current, 0);
   remainLabel.textContent = `-${formatTime(remain)}`;
+  syncComposerCurrentTimePreview();
 }
 
 function renderSeekMarkers() {
@@ -758,51 +919,131 @@ function renderComments() {
       editorGrid.className = "inline-editor-grid";
 
       const tagField = document.createElement("div");
-      tagField.className = "field compact";
+      tagField.className = "field grow";
       const tagFieldLabel = document.createElement("label");
       tagFieldLabel.textContent = "タグ";
-      const tagEditorSelect = document.createElement("select");
-      COMMENT_TAGS.forEach((tagOption) => {
-        const option = document.createElement("option");
-        option.value = tagOption.value;
-        option.textContent = tagOption.label;
-        option.selected = normalizeCommentTag(comment.tag) === tagOption.value;
-        tagEditorSelect.appendChild(option);
+      const tagEditorButtons = document.createElement("div");
+      tagEditorButtons.className = "choice-buttons";
+      let selectedTag = normalizeCommentTag(comment.tag);
+      createChoiceButtonsController({
+        container: tagEditorButtons,
+        options: COMMENT_TAGS,
+        initialValue: selectedTag,
+        normalizeValue: normalizeCommentTag,
+        getLabel: (tagOption) => tagOption.label,
+        kind: "tag",
+        onChange: (nextValue) => {
+          selectedTag = nextValue;
+        }
       });
-      tagField.append(tagFieldLabel, tagEditorSelect);
+      tagField.append(tagFieldLabel, tagEditorButtons);
 
       const timeModeField = document.createElement("div");
-      timeModeField.className = "field compact";
+      timeModeField.className = "field grow";
       const timeModeFieldLabel = document.createElement("label");
       timeModeFieldLabel.textContent = "コメント時間";
-      const timeModeEditorSelect = document.createElement("select");
-      COMMENT_TIME_MODES.forEach((timeModeOption) => {
-        const option = document.createElement("option");
-        option.value = timeModeOption.value;
-        option.textContent = timeModeOption.label;
-        option.selected = normalizeCommentTimeMode(comment.timeMode) === timeModeOption.value;
-        timeModeEditorSelect.appendChild(option);
-      });
-      timeModeField.append(timeModeFieldLabel, timeModeEditorSelect);
-
+      const inlineTimePanel = document.createElement("div");
+      inlineTimePanel.className = "time-setting-panel";
+      const timeModeEditorButtons = document.createElement("div");
+      timeModeEditorButtons.className = "choice-buttons compact";
       const manualField = document.createElement("div");
-      manualField.className = "field compact";
-      const manualFieldLabel = document.createElement("label");
-      manualFieldLabel.textContent = "手動時間";
+      manualField.className = "time-entry-row";
       const manualEditorInput = document.createElement("input");
       manualEditorInput.type = "text";
-      manualEditorInput.value = isTimedComment(comment) ? comment.timecode : (timeInput?.value || "00:00:00");
+      manualEditorInput.value = isTimedComment(comment) ? comment.timecode : "";
       manualEditorInput.placeholder = "00:00:00";
-      manualField.append(manualFieldLabel, manualEditorInput);
+      const applyCurrentInlineTimeBtn = document.createElement("button");
+      applyCurrentInlineTimeBtn.type = "button";
+      applyCurrentInlineTimeBtn.className = "btn time-fill-btn";
+      const timeModeHint = document.createElement("p");
+      timeModeHint.className = "field-note";
+      const originalTimeMode = normalizeCommentTimeMode(comment.timeMode);
+      let selectedTimeMode = originalTimeMode;
+      let inlineAutoPreview = originalTimeMode === "auto" && isTimedComment(comment)
+        ? comment.timecode
+        : getDisplayedTimelineTime();
+      let inlineManualDraft = isTimedComment(comment) ? comment.timecode : "";
 
-      const syncInlineManualField = () => {
-        manualField.classList.toggle("is-hidden", timeModeEditorSelect.value !== "manual");
+      const syncInlineTimeField = () => {
+        const preserveExistingAutoTime =
+          selectedTimeMode === "auto" && originalTimeMode === "auto" && isTimedComment(comment);
+        const wasManual = !manualEditorInput.disabled;
+
+        if (selectedTimeMode === "manual") {
+          manualField.dataset.mode = "manual";
+          manualEditorInput.dataset.mode = "manual";
+          manualEditorInput.disabled = false;
+          manualEditorInput.readOnly = false;
+          manualEditorInput.placeholder = "00:00:00";
+          if (!manualEditorInput.value.trim() || !wasManual) {
+            manualEditorInput.value = inlineManualDraft.trim() || getDisplayedTimelineTime();
+          }
+        } else if (selectedTimeMode === "auto") {
+          if (wasManual && manualEditorInput.value.trim()) {
+            inlineManualDraft = manualEditorInput.value.trim();
+          }
+          manualField.dataset.mode = "auto";
+          manualEditorInput.dataset.mode = "auto";
+          manualEditorInput.disabled = true;
+          manualEditorInput.readOnly = true;
+          manualEditorInput.value = preserveExistingAutoTime ? comment.timecode : inlineAutoPreview;
+          manualEditorInput.placeholder = manualEditorInput.value || getDisplayedTimelineTime();
+        } else {
+          if (wasManual && manualEditorInput.value.trim()) {
+            inlineManualDraft = manualEditorInput.value.trim();
+          }
+          manualField.dataset.mode = "none";
+          manualEditorInput.dataset.mode = "none";
+          manualEditorInput.disabled = true;
+          manualEditorInput.readOnly = true;
+          manualEditorInput.value = "";
+          manualEditorInput.placeholder = "時間なし";
+        }
+
+        applyCurrentInlineTimeBtn.textContent = getTimeModeActionLabel(selectedTimeMode);
+        timeModeHint.textContent = preserveExistingAutoTime
+          ? "保存すると現在のコメント時間を維持します。"
+          : getTimeModeHint(selectedTimeMode);
       };
-      timeModeEditorSelect.addEventListener("change", syncInlineManualField);
-      timeModeEditorSelect.addEventListener("input", syncInlineManualField);
-      syncInlineManualField();
 
-      editorGrid.append(tagField, timeModeField, manualField);
+      const timeModeController = createChoiceButtonsController({
+        container: timeModeEditorButtons,
+        options: COMMENT_TIME_MODES,
+        initialValue: selectedTimeMode,
+        normalizeValue: normalizeCommentTimeMode,
+        getLabel: (timeModeOption) => getTimeModeButtonLabel(timeModeOption.value),
+        kind: "timeMode",
+        onChange: (nextValue) => {
+          if (selectedTimeMode === "manual" && manualEditorInput.value.trim()) {
+            inlineManualDraft = manualEditorInput.value.trim();
+          }
+          if (nextValue === "auto" && selectedTimeMode !== "auto") {
+            inlineAutoPreview = getDisplayedTimelineTime();
+          }
+          selectedTimeMode = nextValue;
+          syncInlineTimeField();
+        }
+      });
+
+      manualEditorInput.addEventListener("input", () => {
+        inlineManualDraft = manualEditorInput.value;
+      });
+      applyCurrentInlineTimeBtn.addEventListener("click", () => {
+        const currentTime = getDisplayedTimelineTime();
+        inlineAutoPreview = currentTime;
+        inlineManualDraft = currentTime;
+        timeModeController?.setValue("manual");
+        manualEditorInput.value = currentTime;
+        manualEditorInput.focus();
+        manualEditorInput.setSelectionRange(manualEditorInput.value.length, manualEditorInput.value.length);
+      });
+
+      manualField.append(manualEditorInput, applyCurrentInlineTimeBtn);
+      inlineTimePanel.append(timeModeEditorButtons, manualField, timeModeHint);
+      timeModeField.append(timeModeFieldLabel, inlineTimePanel);
+      syncInlineTimeField();
+
+      editorGrid.append(tagField, timeModeField);
 
       const row = document.createElement("div");
       row.className = "inline-editor-actions";
@@ -813,7 +1054,7 @@ function renderComments() {
       const saveInlineEdit = () => {
         const trimmed = input.value.trim();
         if (!trimmed) return;
-        const requestedTimeMode = timeModeEditorSelect.value;
+        const requestedTimeMode = selectedTimeMode;
         const nextTiming = buildCommentTiming({
           requestedMode: requestedTimeMode,
           manualValue: manualEditorInput.value,
@@ -824,7 +1065,7 @@ function renderComments() {
           setMessage("手動時間の形式を確認してください。");
           return;
         }
-        comment.tag = normalizeCommentTag(tagEditorSelect.value);
+        comment.tag = normalizeCommentTag(selectedTag);
         comment.text = trimmed;
         comment.timeMode = nextTiming.timeMode;
         comment.seconds = nextTiming.seconds;
@@ -1412,9 +1653,13 @@ if (singleTargetSelect) {
   singleTargetSelect.addEventListener("change", syncSingleTargetMode);
   singleTargetSelect.addEventListener("input", syncSingleTargetMode);
 }
-if (commentTimeModeSelect) {
-  commentTimeModeSelect.addEventListener("change", updateManualTimeField);
-  commentTimeModeSelect.addEventListener("input", updateManualTimeField);
+if (manualTimeInput) {
+  manualTimeInput.addEventListener("input", () => {
+    composerManualTimeDraft = manualTimeInput.value;
+  });
+}
+if (copyCurrentTimeBtn) {
+  copyCurrentTimeBtn.addEventListener("click", applyCurrentTimeToComposer);
 }
 if (speedButtons) {
   speedButtons.addEventListener("click", (e) => {
@@ -1499,14 +1744,39 @@ window.addEventListener("pointercancel", endHorizontalResize);
 setupVideoPickerOnSurface(leftVideoWrap, leftVideo, leftFile, leftFilename, leftPlaceholder);
 setupVideoPickerOnSurface(rightVideoWrap, rightVideo, rightFile, rightFilename, rightPlaceholder);
 
+tagButtonsController = createChoiceButtonsController({
+  container: tagButtons,
+  options: COMMENT_TAGS,
+  initialValue: tagSelect?.value || "none",
+  normalizeValue: normalizeCommentTag,
+  getLabel: (tagOption) => tagOption.label,
+  kind: "tag",
+  onChange: (nextValue) => {
+    if (tagSelect) tagSelect.value = nextValue;
+  }
+});
+commentTimeModeButtonsController = createChoiceButtonsController({
+  container: commentTimeModeButtons,
+  options: COMMENT_TIME_MODES,
+  initialValue: commentTimeModeSelect?.value || "auto",
+  normalizeValue: normalizeCommentTimeMode,
+  getLabel: (timeModeOption) => getTimeModeButtonLabel(timeModeOption.value),
+  kind: "timeMode",
+  onChange: (nextValue) => {
+    if (commentTimeModeSelect) commentTimeModeSelect.value = nextValue;
+    updateManualTimeField();
+  }
+});
+
 applyModeFeatureFlags();
 if (sortType) sortType.value = DEFAULT_SORT_TYPE;
 if (sortOrder) sortOrder.value = DEFAULT_SORT_ORDER;
+setComposerTagValue(tagSelect?.value || "none");
+setComposerTimeMode(commentTimeModeSelect?.value || "auto");
 syncControlsState();
 renderComments();
 updateTimelineUI();
 updateExportLocationUI();
 applyVolumeSetting();
-updateManualTimeField();
 setViewMode("single");
 setPlaybackRateSetting(1);
