@@ -3,6 +3,7 @@ const rightVideo = document.getElementById("rightVideo");
 const leftVideoWrap = document.getElementById("leftVideoWrap");
 const rightVideoWrap = document.getElementById("rightVideoWrap");
 const videoGrid = document.getElementById("videoGrid");
+const viewModeTabs = document.querySelector(".view-mode-tabs");
 const splitLayout = document.getElementById("splitLayout");
 const paneResizer = document.getElementById("paneResizer");
 const leftFile = document.getElementById("leftFile");
@@ -35,6 +36,10 @@ const compareModeTab = document.getElementById("compareModeTab");
 const singleModeTab = document.getElementById("singleModeTab");
 const singleTargetRow = document.getElementById("singleTargetRow");
 const singleTargetSelect = document.getElementById("singleTargetSelect");
+const tagSelect = document.getElementById("tagSelect");
+const commentTimeModeSelect = document.getElementById("commentTimeModeSelect");
+const manualTimeField = document.getElementById("manualTimeField");
+const manualTimeInput = document.getElementById("manualTimeInput");
 const commentsList = document.getElementById("commentsList");
 const commentCount = document.getElementById("commentCount");
 const sortType = document.getElementById("sortType");
@@ -51,6 +56,24 @@ const exportFormatInputs = document.querySelectorAll('input[name="exportFormat"]
 const exportLocationTypeInputs = document.querySelectorAll('input[name="exportLocationType"]');
 const exportFieldInputs = document.querySelectorAll('input[data-export-field]');
 const statusMessage = document.getElementById("statusMessage");
+
+const ENABLE_COMPARE_MODE = false;
+const DEFAULT_SORT_TYPE = "timeline";
+const DEFAULT_SORT_ORDER = "asc";
+const COMMENT_TAGS = [
+  { value: "none", label: "ー" },
+  { value: "caption", label: "テロップ" },
+  { value: "design", label: "デザイン" },
+  { value: "audio", label: "音声" },
+  { value: "video", label: "映像" },
+  { value: "transition", label: "切り替わり" },
+  { value: "other", label: "その他" }
+];
+const COMMENT_TIME_MODES = [
+  { value: "auto", label: "自動（表示画面の時間）", shortLabel: "自動" },
+  { value: "manual", label: "手動入力", shortLabel: "手動入力" },
+  { value: "none", label: "無し", shortLabel: "無し" }
+];
 
 let canControl = false;
 let isPlaying = false;
@@ -78,6 +101,27 @@ function applyVolumeSetting() {
 function setMessage(text) {
   if (!statusMessage) return;
   statusMessage.textContent = text || "";
+}
+
+function getTagLabel(tagValue) {
+  return COMMENT_TAGS.find((tag) => tag.value === tagValue)?.label || "ー";
+}
+
+function getTimeModeLabel(modeValue) {
+  const mode = COMMENT_TIME_MODES.find((entry) => entry.value === modeValue);
+  return mode?.shortLabel || mode?.label || "自動";
+}
+
+function getTimeModeExportLabel(modeValue) {
+  return COMMENT_TIME_MODES.find((mode) => mode.value === modeValue)?.label || "自動（表示画面の時間）";
+}
+
+function normalizeCommentTag(tagValue) {
+  return COMMENT_TAGS.some((tag) => tag.value === tagValue) ? tagValue : "none";
+}
+
+function normalizeCommentTimeMode(modeValue) {
+  return COMMENT_TIME_MODES.some((mode) => mode.value === modeValue) ? modeValue : "auto";
 }
 
 function formatTime(seconds) {
@@ -131,10 +175,97 @@ function nearestFrame(seconds) {
   return Math.round(seconds / step) * step;
 }
 
+function getSelectedSingleTarget() {
+  return singleTargetSelect?.value === "right" ? "right" : "left";
+}
+
+function getSingleModeVideo() {
+  return getSelectedSingleTarget() === "right" ? rightVideo : leftVideo;
+}
+
+function getReferenceVideo() {
+  return viewMode === "single" ? getSingleModeVideo() : leftVideo;
+}
+
+function getInactiveSingleModeVideo() {
+  return getSelectedSingleTarget() === "right" ? leftVideo : rightVideo;
+}
+
+function isTimedComment(comment) {
+  return Number.isFinite(comment?.seconds);
+}
+
+function getCommentDisplayTime(comment) {
+  return isTimedComment(comment) ? comment.timecode : "—";
+}
+
+function updateManualTimeField() {
+  if (!manualTimeField || !commentTimeModeSelect) return;
+  const isManual = commentTimeModeSelect.value === "manual";
+  manualTimeField.classList.toggle("is-hidden", !isManual);
+  if (isManual && manualTimeInput && !manualTimeInput.value.trim()) {
+    manualTimeInput.value = timeInput?.value || "00:00:00";
+  }
+}
+
+function applyModeFeatureFlags() {
+  if (ENABLE_COMPARE_MODE) {
+    if (compareModeTab) compareModeTab.classList.remove("is-hidden");
+    if (viewModeTabs) viewModeTabs.classList.remove("single-only");
+    return;
+  }
+  if (compareModeTab) compareModeTab.classList.add("is-hidden");
+  if (viewModeTabs) viewModeTabs.classList.add("single-only");
+}
+
+function buildCommentTiming({ requestedMode, manualValue = "", existingComment = null, useCurrentTime = false }) {
+  const timeMode = normalizeCommentTimeMode(requestedMode);
+
+  if (timeMode === "none") {
+    return { timeMode, seconds: null, timecode: "" };
+  }
+
+  if (timeMode === "manual") {
+    const parsed = parseTimeInput(manualValue);
+    if (parsed === null) return null;
+    return {
+      timeMode,
+      seconds: parsed,
+      timecode: formatTime(parsed)
+    };
+  }
+
+  if (!useCurrentTime && existingComment && isTimedComment(existingComment)) {
+    return {
+      timeMode,
+      seconds: existingComment.seconds,
+      timecode: existingComment.timecode || formatTime(existingComment.seconds)
+    };
+  }
+
+  const seconds = getReferenceVideo().currentTime || 0;
+  return {
+    timeMode,
+    seconds,
+    timecode: formatTime(seconds)
+  };
+}
+
+function updateVideoSizing(videoEl) {
+  if (!videoEl) return;
+  const wrap = videoEl === leftVideo ? leftVideoWrap : rightVideoWrap;
+  if (!wrap) return;
+
+  const sourceWidth = videoEl.videoWidth || 0;
+  const sourceHeight = videoEl.videoHeight || 0;
+  const orientation =
+    sourceWidth === sourceHeight ? "square" : sourceWidth > sourceHeight ? "landscape" : "portrait";
+  wrap.dataset.videoOrientation = orientation;
+}
+
 function getDuration() {
   if (viewMode === "single") {
-    const singleTarget = singleTargetSelect?.value || "left";
-    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    const video = getSingleModeVideo();
     if (!video.duration || !Number.isFinite(video.duration)) return 0;
     return video.duration;
   }
@@ -145,8 +276,7 @@ function getDuration() {
 
 function syncControlsState() {
   if (viewMode === "single") {
-    const singleTarget = singleTargetSelect?.value || "left";
-    const video = singleTarget === "right" ? rightVideo : leftVideo;
+    const video = getSingleModeVideo();
     canControl = Boolean(video.src && getDuration() > 0);
   } else {
     canControl = Boolean(leftVideo.src && rightVideo.src && getDuration() > 0);
@@ -161,6 +291,38 @@ function syncControlsState() {
   seekSlider.disabled = !canControl;
 }
 
+function updateStatusMessage() {
+  if (canControl) {
+    setMessage(
+      viewMode === "compare"
+        ? "2動画を読み込みました。同期再生できます。"
+        : "動画を読み込みました。単体チェックできます。"
+    );
+    return;
+  }
+
+  if (viewMode === "compare") {
+    const loadedCount = Number(Boolean(leftVideo.src)) + Number(Boolean(rightVideo.src));
+    if (loadedCount === 0) {
+      setMessage("左右の動画を選択してください。");
+      return;
+    }
+    if (loadedCount === 1) {
+      setMessage("もう片方の動画を選択してください。");
+      return;
+    }
+    setMessage("2動画を読み込んでいます...");
+    return;
+  }
+
+  const targetLabel = getSelectedSingleTarget() === "right" ? "右動画" : "左動画";
+  if (getSingleModeVideo().src) {
+    setMessage(`${targetLabel}を読み込んでいます...`);
+    return;
+  }
+  setMessage(`${targetLabel}を選択すると単体チェックできます。`);
+}
+
 function setPlayingState(playing) {
   isPlaying = playing;
   playPauseBtn.textContent = playing ? "⏸" : "▶";
@@ -169,11 +331,7 @@ function setPlayingState(playing) {
 }
 
 function updateTimelineUI() {
-  const singleTarget = singleTargetSelect?.value || "left";
-  const baseVideo =
-    viewMode === "single"
-      ? (singleTarget === "right" ? rightVideo : leftVideo)
-      : leftVideo;
+  const baseVideo = getReferenceVideo();
   const current = baseVideo.currentTime || 0;
   const duration = getDuration();
 
@@ -333,9 +491,8 @@ function playBoth() {
   }
   const forwardRate = playbackRateSetting;
   if (viewMode === "single") {
-    const singleTarget = singleTargetSelect?.value || "left";
-    const video = singleTarget === "right" ? rightVideo : leftVideo;
-    const other = singleTarget === "right" ? leftVideo : rightVideo;
+    const video = getSingleModeVideo();
+    const other = getInactiveSingleModeVideo();
     other.pause();
     video.playbackRate = forwardRate;
     Promise.allSettled([video.play()]).then(() => {
@@ -369,9 +526,7 @@ function seekBoth(seconds, resume = false, options = {}) {
   const token = ++seekToken;
 
   if (viewMode === "single") {
-    const singleTarget = singleTargetSelect?.value || "left";
-    const video = singleTarget === "right" ? rightVideo : leftVideo;
-    video.currentTime = clamped;
+    getSingleModeVideo().currentTime = clamped;
   } else {
     leftVideo.currentTime = clamped;
     rightVideo.currentTime = clamped;
@@ -387,25 +542,21 @@ function seekBoth(seconds, resume = false, options = {}) {
 function stepFrame(dir) {
   if (!canControl) return;
   pauseBoth();
-  const next = leftVideo.currentTime + frameDuration * dir;
+  const next = getReferenceVideo().currentTime + frameDuration * dir;
   seekBoth(next, false);
 }
 
 function stepSecond(dir) {
   if (!canControl) return;
   pauseBoth();
-  const base = viewMode === "single"
-    ? ((singleTargetSelect?.value || "left") === "right" ? rightVideo.currentTime : leftVideo.currentTime)
-    : leftVideo.currentTime;
+  const base = getReferenceVideo().currentTime;
   seekBoth(base + dir, false);
 }
 
 function stepTenSeconds(dir) {
   if (!canControl) return;
   pauseBoth();
-  const base = viewMode === "single"
-    ? ((singleTargetSelect?.value || "left") === "right" ? rightVideo.currentTime : leftVideo.currentTime)
-    : leftVideo.currentTime;
+  const base = getReferenceVideo().currentTime;
   seekBoth(base + dir * 10, false);
 }
 
@@ -414,25 +565,15 @@ function recalcFrameDuration() {
   frameDuration = 1 / 30;
 }
 
-function onVideoLoaded() {
+function onVideoLoaded(event) {
+  const loadedVideo = event?.currentTarget instanceof HTMLVideoElement ? event.currentTarget : null;
+  if (loadedVideo) updateVideoSizing(loadedVideo);
   recalcFrameDuration();
   syncControlsState();
   updateTimelineUI();
   renderSeekMarkers();
-  if (canControl) {
-    seekBoth(0, false);
-    if (viewMode === "compare") {
-      setMessage("2動画を読み込みました。同期再生できます。");
-    } else {
-      setMessage("動画を読み込みました。単体チェックできます。");
-    }
-  } else {
-    if (viewMode === "compare") {
-      setMessage("もう片方の動画を選択してください。");
-    } else {
-      setMessage("単体チェックする動画を選択してください。");
-    }
-  }
+  updateStatusMessage();
+  if (canControl) seekBoth(0, false);
 }
 
 function loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl) {
@@ -446,7 +587,10 @@ function loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl) {
   filenameEl.textContent = file.name;
   placeholderEl.style.display = "none";
   pauseBoth();
-  onVideoLoaded();
+  syncControlsState();
+  updateTimelineUI();
+  renderSeekMarkers();
+  updateStatusMessage();
   return true;
 }
 
@@ -484,14 +628,24 @@ function addComment() {
   if (!text) return;
 
   const author = authorInput.value.trim() || "未入力";
-  const baseTime = leftVideo.currentTime || 0;
+  const timing = buildCommentTiming({
+    requestedMode: commentTimeModeSelect?.value || "auto",
+    manualValue: manualTimeInput?.value || "",
+    useCurrentTime: true
+  });
+  if (!timing) {
+    setMessage("手動時間の形式を確認してください。");
+    return;
+  }
 
   comments.unshift({
     id: crypto.randomUUID(),
     author,
+    tag: normalizeCommentTag(tagSelect?.value),
     text,
-    seconds: baseTime,
-    timecode: formatTime(baseTime),
+    timeMode: timing.timeMode,
+    seconds: timing.seconds,
+    timecode: timing.timecode,
     updatedAt: Date.now()
   });
 
@@ -509,7 +663,17 @@ function sortedComments(source) {
     if (type === "updatedAt") {
       diff = a.updatedAt - b.updatedAt;
     } else {
-      diff = a.seconds - b.seconds;
+      const aTimed = isTimedComment(a);
+      const bTimed = isTimedComment(b);
+      if (aTimed && bTimed) {
+        diff = a.seconds - b.seconds;
+      } else if (aTimed) {
+        diff = -1;
+      } else if (bTimed) {
+        diff = 1;
+      } else {
+        diff = a.updatedAt - b.updatedAt;
+      }
     }
     return order === "asc" ? diff : -diff;
   });
@@ -535,12 +699,27 @@ function renderComments() {
 
     const time = document.createElement("div");
     time.className = "comment-time";
-    time.textContent = comment.timecode;
+    time.textContent = getCommentDisplayTime(comment);
 
     const main = document.createElement("div");
     const author = document.createElement("div");
     author.className = "comment-author";
     author.textContent = comment.author;
+
+    const metaRow = document.createElement("div");
+    metaRow.className = "comment-meta-row";
+
+    const tagBadge = document.createElement("span");
+    tagBadge.className = "comment-tag";
+    tagBadge.dataset.tag = normalizeCommentTag(comment.tag);
+    tagBadge.textContent = getTagLabel(comment.tag);
+
+    const timeModeBadge = document.createElement("span");
+    timeModeBadge.className = "comment-time-mode";
+    timeModeBadge.dataset.timeMode = normalizeCommentTimeMode(comment.timeMode);
+    timeModeBadge.textContent = getTimeModeLabel(comment.timeMode);
+
+    metaRow.append(tagBadge, timeModeBadge);
 
     const text = document.createElement("button");
     text.className = "comment-text btn";
@@ -548,13 +727,18 @@ function renderComments() {
     text.style.padding = "6px 8px";
     text.style.borderRadius = "8px";
     text.textContent = comment.text;
-    text.title = "クリックでこの時刻に移動";
-    text.addEventListener("click", () => {
-      pauseBoth();
-      seekBoth(comment.seconds, false);
-    });
+    if (isTimedComment(comment)) {
+      text.title = "クリックでこの時刻に移動";
+      text.addEventListener("click", () => {
+        pauseBoth();
+        seekBoth(comment.seconds, false);
+      });
+    } else {
+      text.disabled = true;
+      text.title = "時間指定なしのコメントです";
+    }
 
-    main.append(author, text);
+    main.append(author, metaRow, text);
 
     const actions = document.createElement("div");
     actions.className = "comment-actions";
@@ -570,6 +754,56 @@ function renderComments() {
       input.className = "inline-editor-input";
       input.value = comment.text;
 
+      const editorGrid = document.createElement("div");
+      editorGrid.className = "inline-editor-grid";
+
+      const tagField = document.createElement("div");
+      tagField.className = "field compact";
+      const tagFieldLabel = document.createElement("label");
+      tagFieldLabel.textContent = "タグ";
+      const tagEditorSelect = document.createElement("select");
+      COMMENT_TAGS.forEach((tagOption) => {
+        const option = document.createElement("option");
+        option.value = tagOption.value;
+        option.textContent = tagOption.label;
+        option.selected = normalizeCommentTag(comment.tag) === tagOption.value;
+        tagEditorSelect.appendChild(option);
+      });
+      tagField.append(tagFieldLabel, tagEditorSelect);
+
+      const timeModeField = document.createElement("div");
+      timeModeField.className = "field compact";
+      const timeModeFieldLabel = document.createElement("label");
+      timeModeFieldLabel.textContent = "コメント時間";
+      const timeModeEditorSelect = document.createElement("select");
+      COMMENT_TIME_MODES.forEach((timeModeOption) => {
+        const option = document.createElement("option");
+        option.value = timeModeOption.value;
+        option.textContent = timeModeOption.label;
+        option.selected = normalizeCommentTimeMode(comment.timeMode) === timeModeOption.value;
+        timeModeEditorSelect.appendChild(option);
+      });
+      timeModeField.append(timeModeFieldLabel, timeModeEditorSelect);
+
+      const manualField = document.createElement("div");
+      manualField.className = "field compact";
+      const manualFieldLabel = document.createElement("label");
+      manualFieldLabel.textContent = "手動時間";
+      const manualEditorInput = document.createElement("input");
+      manualEditorInput.type = "text";
+      manualEditorInput.value = isTimedComment(comment) ? comment.timecode : (timeInput?.value || "00:00:00");
+      manualEditorInput.placeholder = "00:00:00";
+      manualField.append(manualFieldLabel, manualEditorInput);
+
+      const syncInlineManualField = () => {
+        manualField.classList.toggle("is-hidden", timeModeEditorSelect.value !== "manual");
+      };
+      timeModeEditorSelect.addEventListener("change", syncInlineManualField);
+      timeModeEditorSelect.addEventListener("input", syncInlineManualField);
+      syncInlineManualField();
+
+      editorGrid.append(tagField, timeModeField, manualField);
+
       const row = document.createElement("div");
       row.className = "inline-editor-actions";
 
@@ -579,7 +813,22 @@ function renderComments() {
       const saveInlineEdit = () => {
         const trimmed = input.value.trim();
         if (!trimmed) return;
+        const requestedTimeMode = timeModeEditorSelect.value;
+        const nextTiming = buildCommentTiming({
+          requestedMode: requestedTimeMode,
+          manualValue: manualEditorInput.value,
+          existingComment: comment,
+          useCurrentTime: normalizeCommentTimeMode(requestedTimeMode) !== normalizeCommentTimeMode(comment.timeMode)
+        });
+        if (!nextTiming) {
+          setMessage("手動時間の形式を確認してください。");
+          return;
+        }
+        comment.tag = normalizeCommentTag(tagEditorSelect.value);
         comment.text = trimmed;
+        comment.timeMode = nextTiming.timeMode;
+        comment.seconds = nextTiming.seconds;
+        comment.timecode = nextTiming.timecode;
         comment.updatedAt = Date.now();
         renderComments();
       };
@@ -605,7 +854,7 @@ function renderComments() {
       });
 
       row.append(save, cancel);
-      editor.append(input, row);
+      editor.append(input, editorGrid, row);
       main.replaceChild(editor, text);
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
@@ -626,8 +875,12 @@ function renderComments() {
 }
 
 function setViewMode(nextMode) {
-  viewMode = nextMode === "single" ? "single" : "compare";
-  const singleTarget = singleTargetSelect?.value || "left";
+  if (!ENABLE_COMPARE_MODE) {
+    viewMode = "single";
+  } else {
+    viewMode = nextMode === "single" ? "single" : "compare";
+  }
+  const singleTarget = getSelectedSingleTarget();
 
   if (compareModeTab) compareModeTab.classList.toggle("active", viewMode === "compare");
   if (singleModeTab) singleModeTab.classList.toggle("active", viewMode === "single");
@@ -656,6 +909,7 @@ function setViewMode(nextMode) {
   syncControlsState();
   updateTimelineUI();
   renderSeekMarkers();
+  updateStatusMessage();
 }
 
 function setPlaybackRateSetting(value) {
@@ -702,9 +956,11 @@ function toCsvField(value) {
 
 const EXPORT_FIELDS = [
   { key: "timecode", label: "動画時間", value: (row) => row.timecode },
-  { key: "seconds", label: "秒", value: (row) => row.seconds.toFixed(3) },
+  { key: "seconds", label: "秒", value: (row) => (isTimedComment(row) ? row.seconds.toFixed(3) : "") },
+  { key: "tag", label: "タグ", value: (row) => getTagLabel(row.tag) },
   { key: "author", label: "記入者", value: (row) => row.author },
   { key: "text", label: "コメント", value: (row) => row.text },
+  { key: "timeMode", label: "コメント時間設定", value: (row) => getTimeModeExportLabel(row.timeMode) },
   { key: "updatedAt", label: "更新日時", value: (row) => new Date(row.updatedAt).toISOString() }
 ];
 
@@ -781,7 +1037,7 @@ function saveByDownload(content, format) {
   const a = document.createElement("a");
   const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
   a.href = url;
-  a.download = `versusview-comments-${stamp}.${ext}`;
+  a.download = `switchman-comments-${stamp}.${ext}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -799,7 +1055,7 @@ async function chooseExportLocation() {
   const accept = format === "txt" ? { "text/plain": [".txt"] } : { "text/csv": [".csv"] };
   try {
     exportFileHandle = await window.showSaveFilePicker({
-      suggestedName: `versusview-comments.${ext}`,
+      suggestedName: `switchman-comments.${ext}`,
       types: [{ description: format.toUpperCase(), accept }]
     });
     updateExportLocationUI();
@@ -882,8 +1138,10 @@ function parseCsvText(text) {
   const idx = {
     timecode: byLabel("動画時間"),
     seconds: byLabel("秒"),
+    tag: byLabel("タグ"),
     author: byLabel("記入者"),
     text: byLabel("コメント"),
+    timeMode: byLabel("コメント時間設定"),
     updatedAt: byLabel("更新日時")
   };
 
@@ -891,18 +1149,31 @@ function parseCsvText(text) {
     const secondsRaw = idx.seconds >= 0 ? Number(cols[idx.seconds]) : NaN;
     const timecodeRaw = idx.timecode >= 0 ? cols[idx.timecode] : "";
     const parsedByTimecode = parseTimeInput(timecodeRaw);
-    const seconds = Number.isFinite(secondsRaw)
+    const inferredSeconds = Number.isFinite(secondsRaw)
       ? secondsRaw
       : Number.isFinite(parsedByTimecode)
         ? parsedByTimecode
-        : 0;
+        : null;
+    const rawTag = idx.tag >= 0 ? cols[idx.tag] : "";
+    const tag = COMMENT_TAGS.find((entry) => entry.label === rawTag)?.value || normalizeCommentTag(rawTag);
+    const rawTimeMode = idx.timeMode >= 0 ? cols[idx.timeMode] : "";
+    const inferredTimeMode = COMMENT_TIME_MODES.find((entry) => entry.label === rawTimeMode || entry.shortLabel === rawTimeMode)?.value
+      || normalizeCommentTimeMode(rawTimeMode || (Number.isFinite(inferredSeconds) ? "auto" : "none"));
     const updatedRaw = idx.updatedAt >= 0 ? Date.parse(cols[idx.updatedAt]) : NaN;
     return {
       id: crypto.randomUUID(),
       author: idx.author >= 0 ? (cols[idx.author] || "未入力") : "未入力",
+      tag,
       text: idx.text >= 0 ? (cols[idx.text] || "") : "",
-      seconds,
-      timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
+      timeMode: inferredTimeMode,
+      seconds: inferredTimeMode === "none" ? null : inferredSeconds,
+      timecode: inferredTimeMode === "none"
+        ? ""
+        : Number.isFinite(parsedByTimecode)
+          ? formatTime(parsedByTimecode)
+          : Number.isFinite(inferredSeconds)
+            ? formatTime(inferredSeconds)
+            : "",
       updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
     };
   }).filter((row) => row.text.length > 0);
@@ -921,18 +1192,31 @@ function parseTxtText(text) {
     const map = Object.fromEntries(pairs);
     const secondsRaw = Number(map["秒"]);
     const parsedByTimecode = parseTimeInput(map["動画時間"] || "");
-    const seconds = Number.isFinite(secondsRaw)
+    const inferredSeconds = Number.isFinite(secondsRaw)
       ? secondsRaw
       : Number.isFinite(parsedByTimecode)
         ? parsedByTimecode
-        : 0;
+        : null;
+    const rawTag = map["タグ"] || "";
+    const tag = COMMENT_TAGS.find((entry) => entry.label === rawTag)?.value || normalizeCommentTag(rawTag);
+    const rawTimeMode = map["コメント時間設定"] || "";
+    const inferredTimeMode = COMMENT_TIME_MODES.find((entry) => entry.label === rawTimeMode || entry.shortLabel === rawTimeMode)?.value
+      || normalizeCommentTimeMode(rawTimeMode || (Number.isFinite(inferredSeconds) ? "auto" : "none"));
     const updatedRaw = Date.parse(map["更新日時"] || "");
     return {
       id: crypto.randomUUID(),
       author: map["記入者"] || "未入力",
+      tag,
       text: map["コメント"] || "",
-      seconds,
-      timecode: Number.isFinite(parsedByTimecode) ? formatTime(parsedByTimecode) : formatTime(seconds),
+      timeMode: inferredTimeMode,
+      seconds: inferredTimeMode === "none" ? null : inferredSeconds,
+      timecode: inferredTimeMode === "none"
+        ? ""
+        : Number.isFinite(parsedByTimecode)
+          ? formatTime(parsedByTimecode)
+          : Number.isFinite(inferredSeconds)
+            ? formatTime(inferredSeconds)
+            : "",
       updatedAt: Number.isFinite(updatedRaw) ? updatedRaw : Date.now() + rowIndex
     };
   }).filter((row) => row.text.length > 0);
@@ -1118,9 +1402,19 @@ if (singleModeTab) {
   singleModeTab.addEventListener("click", () => setViewMode("single"));
 }
 if (singleTargetSelect) {
-  singleTargetSelect.addEventListener("change", () => {
-    if (viewMode === "single") setViewMode("single");
-  });
+  const syncSingleTargetMode = () => {
+    setViewMode("single");
+    requestAnimationFrame(() => {
+      updateStatusMessage();
+      updateTimelineUI();
+    });
+  };
+  singleTargetSelect.addEventListener("change", syncSingleTargetMode);
+  singleTargetSelect.addEventListener("input", syncSingleTargetMode);
+}
+if (commentTimeModeSelect) {
+  commentTimeModeSelect.addEventListener("change", updateManualTimeField);
+  commentTimeModeSelect.addEventListener("input", updateManualTimeField);
 }
 if (speedButtons) {
   speedButtons.addEventListener("click", (e) => {
@@ -1205,10 +1499,14 @@ window.addEventListener("pointercancel", endHorizontalResize);
 setupVideoPickerOnSurface(leftVideoWrap, leftVideo, leftFile, leftFilename, leftPlaceholder);
 setupVideoPickerOnSurface(rightVideoWrap, rightVideo, rightFile, rightFilename, rightPlaceholder);
 
+applyModeFeatureFlags();
+if (sortType) sortType.value = DEFAULT_SORT_TYPE;
+if (sortOrder) sortOrder.value = DEFAULT_SORT_ORDER;
 syncControlsState();
 renderComments();
 updateTimelineUI();
 updateExportLocationUI();
 applyVolumeSetting();
+updateManualTimeField();
 setViewMode("single");
 setPlaybackRateSetting(1);

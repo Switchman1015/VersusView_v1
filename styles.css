@@ -216,6 +216,8 @@ body.resizing {
 
 .video-wrap {
   position: relative;
+  display: grid;
+  place-items: center;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -225,11 +227,29 @@ body.resizing {
 }
 
 video {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+  object-position: center center;
   display: block;
   background: #000;
+}
+
+.video-wrap[data-video-orientation="landscape"] video {
+  width: 100%;
+  height: auto;
+}
+
+.video-wrap[data-video-orientation="portrait"] video {
+  width: auto;
+  height: 100%;
+}
+
+.video-wrap[data-video-orientation="square"] video {
+  width: 100%;
+  height: 100%;
 }
 
 .placeholder {
@@ -259,10 +279,10 @@ video {
 }
 
 .player-bar {
-  flex: 0 0 166px;
+  flex: 0 0 190px;
   background: transparent;
   height: auto;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid transparent;
   border-radius: 0 0 12px 12px;
   padding: 10px 12px 8px;
@@ -528,6 +548,13 @@ video {
   align-items: stretch;
 }
 
+.comment-settings-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
 .field {
   width: 100%;
 }
@@ -535,6 +562,10 @@ video {
 .field.grow {
   width: auto;
   flex: 1;
+}
+
+.field.compact {
+  min-width: 0;
 }
 
 .field label {
@@ -572,6 +603,7 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -593,6 +625,12 @@ select {
   display: flex;
   gap: 4px;
   align-items: end;
+}
+
+.view-mode-tabs.single-only .mode-tab {
+  border-radius: 10px;
+  border-bottom-color: #4b5870;
+  top: 0;
 }
 
 .mode-tab {
@@ -692,12 +730,84 @@ select {
 .comment-author {
   color: var(--muted);
   font-size: 0.78rem;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+}
+
+.comment-meta-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.comment-tag,
+.comment-time-mode {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #3f4c64;
+  background: #171f2c;
+  color: #d9e5f8;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.comment-tag[data-tag="none"] {
+  color: #95a2bd;
+}
+
+.comment-tag[data-tag="caption"] {
+  border-color: #7d5fdd;
+  background: rgba(125, 95, 221, 0.18);
+}
+
+.comment-tag[data-tag="design"] {
+  border-color: #2eb1ff;
+  background: rgba(46, 177, 255, 0.16);
+}
+
+.comment-tag[data-tag="audio"] {
+  border-color: #3fd08b;
+  background: rgba(63, 208, 139, 0.16);
+}
+
+.comment-tag[data-tag="video"] {
+  border-color: #ff7c43;
+  background: rgba(255, 124, 67, 0.18);
+}
+
+.comment-tag[data-tag="transition"] {
+  border-color: #ffcf5a;
+  background: rgba(255, 207, 90, 0.18);
+}
+
+.comment-tag[data-tag="other"] {
+  border-color: #8898b8;
+  background: rgba(136, 152, 184, 0.16);
+}
+
+.comment-time-mode[data-time-mode="manual"] {
+  border-color: #4fd7ff;
+  background: rgba(79, 215, 255, 0.16);
+}
+
+.comment-time-mode[data-time-mode="none"] {
+  border-color: #5e6b84;
+  background: rgba(94, 107, 132, 0.18);
+  color: #b7c2d8;
 }
 
 .comment-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.comment-text:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .comment-actions {
@@ -714,6 +824,13 @@ select {
 .inline-editor {
   display: grid;
   gap: 8px;
+}
+
+.inline-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
 }
 
 .inline-editor-input {
@@ -734,7 +851,8 @@ select {
 }
 
 .status-message {
-  margin: 0;
+  margin: 10px 2px 0;
+  min-height: 1.2em;
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -854,7 +972,7 @@ button:disabled {
   }
 
   .player-bar {
-    flex-basis: 186px;
+    flex-basis: 210px;
   }
 
   .top-controls {
@@ -882,6 +1000,11 @@ button:disabled {
   .comment-input-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .comment-settings-row,
+  .inline-editor-grid {
+    grid-template-columns: 1fr;
   }
 
   .field {

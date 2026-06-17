@@ -1,0 +1,23 @@
+{
+  "name": "スイッチマン",
+  "short_name": "スイッチマン",
+  "description": "動画レビュー用コメントアプリ",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f131b",
+  "theme_color": "#ff2f6d",
+  "icons": [
+    {
+      "src": "./icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

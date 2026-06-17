@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VersusView Web</title>
+    <title>スイッチマン</title>
+    <meta name="application-name" content="スイッチマン" />
+    <meta name="apple-mobile-web-app-title" content="スイッチマン" />
+    <meta name="theme-color" content="#ff2f6d" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -14,7 +20,7 @@
             <div class="view-mode-row">
               <div class="view-mode-tabs">
                 <button id="singleModeTab" class="btn mode-tab active" type="button">単体チェック</button>
-                <button id="compareModeTab" class="btn mode-tab" type="button">動画比較</button>
+                <button id="compareModeTab" class="btn mode-tab is-hidden" type="button">動画比較</button>
               </div>
               <div id="singleTargetRow" class="single-target-row">
                 <select id="singleTargetSelect">
@@ -84,6 +90,7 @@
                 <button class="btn speed-btn" data-speed="4" type="button">4.0x</button>
                 <button class="btn speed-btn" data-speed="5" type="button">5.0x</button>
               </div>
+              <p id="statusMessage" class="status-message" aria-live="polite">左動画を選択すると単体チェックできます。</p>
             </section>
           </section>
 
@@ -106,17 +113,43 @@
                   <textarea id="commentInput" placeholder="修正ポイントを入力（改行: Enter / 追加: Shift+Enter）"></textarea>
                 </div>
               </div>
+              <div class="comment-settings-row">
+                <div class="field compact">
+                  <label for="tagSelect">タグ</label>
+                  <select id="tagSelect">
+                    <option value="none">ー</option>
+                    <option value="caption">テロップ</option>
+                    <option value="design">デザイン</option>
+                    <option value="audio">音声</option>
+                    <option value="video">映像</option>
+                    <option value="transition">切り替わり</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+                <div class="field compact">
+                  <label for="commentTimeModeSelect">コメント時間</label>
+                  <select id="commentTimeModeSelect">
+                    <option value="auto">自動（表示画面の時間）</option>
+                    <option value="manual">手動入力</option>
+                    <option value="none">無し</option>
+                  </select>
+                </div>
+                <div id="manualTimeField" class="field compact is-hidden">
+                  <label for="manualTimeInput">手動時間</label>
+                  <input id="manualTimeInput" type="text" placeholder="00:00:00" />
+                </div>
+              </div>
             </div>
 
             <div class="sort-row">
               <span>並び順</span>
               <select id="sortType">
                 <option value="updatedAt">更新日時</option>
-                <option value="timeline">動画時間軸</option>
+                <option value="timeline" selected>動画時間基準</option>
               </select>
               <select id="sortOrder">
                 <option value="desc">降順</option>
-                <option value="asc">昇順</option>
+                <option value="asc" selected>昇順</option>
               </select>
               <span id="commentCount">コメント: 0</span>
             </div>
@@ -152,8 +185,10 @@
           <div class="overlay-grid">
             <label><input type="checkbox" data-export-field="timecode" checked /> 動画時間</label>
             <label><input type="checkbox" data-export-field="seconds" checked /> 秒</label>
+            <label><input type="checkbox" data-export-field="tag" checked /> タグ</label>
             <label><input type="checkbox" data-export-field="author" checked /> 記入者</label>
             <label><input type="checkbox" data-export-field="text" checked /> コメント</label>
+            <label><input type="checkbox" data-export-field="timeMode" checked /> コメント時間設定</label>
             <label><input type="checkbox" data-export-field="updatedAt" checked /> 更新日時</label>
           </div>
         </div>
