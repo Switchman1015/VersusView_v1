@@ -116,7 +116,6 @@ let volumeSetting = 1;
 let composerManualTimeDraft = "";
 let tagButtonsController = null;
 let commentTimeModeButtonsController = null;
-const videoPresentationHints = new WeakMap();
 
 leftVideo.controls = false;
 rightVideo.controls = false;
@@ -215,128 +214,6 @@ function parseTimeInput(value) {
 function nearestFrame(seconds) {
   const step = Math.max(frameDuration, 1 / 120);
   return Math.round(seconds / step) * step;
-}
-
-function readBoxType(view, offset) {
-  return String.fromCharCode(
-    view.getUint8(offset),
-    view.getUint8(offset + 1),
-    view.getUint8(offset + 2),
-    view.getUint8(offset + 3)
-  );
-}
-
-function getBoxInfo(view, offset, limit) {
-  if (offset + 8 > limit) return null;
-
-  const rawSize = view.getUint32(offset);
-  const type = readBoxType(view, offset + 4);
-  let size = rawSize;
-  let headerSize = 8;
-
-  if (rawSize === 1) {
-    if (offset + 16 > limit) return null;
-    size = Number(view.getBigUint64(offset + 8));
-    headerSize = 16;
-  } else if (rawSize === 0) {
-    size = limit - offset;
-  }
-
-  if (!Number.isFinite(size) || size < headerSize || offset + size > limit) return null;
-  return {
-    type,
-    start: offset,
-    size,
-    headerSize,
-    contentStart: offset + headerSize,
-    end: offset + size
-  };
-}
-
-function findChildBoxes(view, start, end, wantedType = null) {
-  const matches = [];
-  let offset = start;
-
-  while (offset + 8 <= end) {
-    const box = getBoxInfo(view, offset, end);
-    if (!box) break;
-    if (!wantedType || box.type === wantedType) matches.push(box);
-    offset = box.end;
-  }
-
-  return matches;
-}
-
-function getVideoRotationFromMatrix(view, matrixOffset) {
-  const a = view.getInt32(matrixOffset) / 65536;
-  const b = view.getInt32(matrixOffset + 4) / 65536;
-  const c = view.getInt32(matrixOffset + 12) / 65536;
-  const d = view.getInt32(matrixOffset + 16) / 65536;
-  const close = (value, expected) => Math.abs(value - expected) < 0.02;
-
-  if (close(a, 0) && close(b, 1) && close(c, -1) && close(d, 0)) return 90;
-  if (close(a, -1) && close(b, 0) && close(c, 0) && close(d, -1)) return 180;
-  if (close(a, 0) && close(b, -1) && close(c, 1) && close(d, 0)) return 270;
-  return 0;
-}
-
-function parseTkhdBox(view, tkhdBox) {
-  const version = view.getUint8(tkhdBox.contentStart);
-  const matrixOffset = version === 1 ? tkhdBox.contentStart + 52 : tkhdBox.contentStart + 40;
-  const widthOffset = matrixOffset + 36;
-  const heightOffset = widthOffset + 4;
-
-  if (heightOffset + 4 > tkhdBox.end) return null;
-
-  return {
-    rotation: getVideoRotationFromMatrix(view, matrixOffset),
-    width: view.getUint32(widthOffset) / 65536,
-    height: view.getUint32(heightOffset) / 65536
-  };
-}
-
-function parseVideoTrackPresentation(view, trakBox) {
-  const tkhdBox = findChildBoxes(view, trakBox.contentStart, trakBox.end, "tkhd")[0];
-  const mdiaBox = findChildBoxes(view, trakBox.contentStart, trakBox.end, "mdia")[0];
-  if (!tkhdBox || !mdiaBox) return null;
-
-  const hdlrBox = findChildBoxes(view, mdiaBox.contentStart, mdiaBox.end, "hdlr")[0];
-  if (!hdlrBox || hdlrBox.contentStart + 12 > hdlrBox.end) return null;
-  if (readBoxType(view, hdlrBox.contentStart + 8) !== "vide") return null;
-
-  return parseTkhdBox(view, tkhdBox);
-}
-
-async function inferMp4Presentation(file) {
-  try {
-    const buffer = await file.arrayBuffer();
-    const view = new DataView(buffer);
-    const moovBox = findChildBoxes(view, 0, view.byteLength, "moov")[0];
-    if (!moovBox) return null;
-
-    const trakBoxes = findChildBoxes(view, moovBox.contentStart, moovBox.end, "trak");
-    for (const trakBox of trakBoxes) {
-      const presentation = parseVideoTrackPresentation(view, trakBox);
-      if (presentation) return presentation;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function normalizeVideoOrientation(width, height, rotation = 0) {
-  let resolvedWidth = width;
-  let resolvedHeight = height;
-
-  if ((rotation === 90 || rotation === 270) && resolvedWidth > resolvedHeight) {
-    [resolvedWidth, resolvedHeight] = [resolvedHeight, resolvedWidth];
-  }
-
-  if (!(resolvedWidth > 0) || !(resolvedHeight > 0)) return "landscape";
-  if (Math.abs(resolvedWidth - resolvedHeight) < 1) return "square";
-  return resolvedWidth > resolvedHeight ? "landscape" : "portrait";
 }
 
 function getSelectedSingleTarget() {
@@ -540,20 +417,8 @@ function updateVideoSizing(videoEl) {
   const wrap = videoEl === leftVideo ? leftVideoWrap : rightVideoWrap;
   if (!wrap) return;
 
-  const hint = videoPresentationHints.get(videoEl);
-  const hintWidth = Number(hint?.width) || 0;
-  const hintHeight = Number(hint?.height) || 0;
-  const hintRotation = Number(hint?.rotation) || 0;
-  const sourceWidth = videoEl.videoWidth || 0;
-  const sourceHeight = videoEl.videoHeight || 0;
-  const orientation = normalizeVideoOrientation(
-    hintWidth || sourceWidth,
-    hintHeight || sourceHeight,
-    hintRotation
-  );
-
   wrap.dataset.videoReady = "true";
-  wrap.dataset.videoOrientation = orientation;
+  delete wrap.dataset.videoOrientation;
 }
 
 function getDuration() {
@@ -874,13 +739,6 @@ async function loadSelectedVideoFile(file, videoEl, filenameEl, placeholderEl) {
   if (!file.name.toLowerCase().endsWith(".mp4")) {
     setMessage("MP4形式のみ対応しています。");
     return false;
-  }
-
-  const presentationHint = await inferMp4Presentation(file);
-  if (presentationHint) {
-    videoPresentationHints.set(videoEl, presentationHint);
-  } else {
-    videoPresentationHints.delete(videoEl);
   }
 
   const url = URL.createObjectURL(file);
